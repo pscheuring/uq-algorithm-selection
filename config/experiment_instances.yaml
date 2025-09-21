@@ -1,0 +1,53 @@
+experiment:
+  name: n_features
+  model_runs: 3
+  seed: 42
+
+  data:
+    function: # List [function, noise_function]
+      - [f_non_linear_3_features, noise_non_linear_3_features]
+
+    train_data:
+      interval:
+        - [-1, 1]
+        - [[-2, -1], [1, 2]]
+      n_instances: 
+        - 50
+        - 100
+        - 500
+        - 1000
+        - 5000
+        - 10000
+        - 50000
+        - 100000
+      n_repeats:
+        - 1
+
+    test_data:
+      interval: 
+        - [-50, 50]
+      grid_length: 
+        - 1000
+
+
+  models:
+    # - bnn:
+    #     input_dim: 1
+    #     hidden_dim: 16
+    #     learning_rate: 0.0005
+    #     epochs: 300
+    #     mc_samples: 200
+
+    # - sder:
+    #     input_dim: 1
+    #     hidden_dim: 64
+    #     learning_rate: 0.005
+    #     epochs: 500
+    #     coeff: 2.0
+
+    - der:
+        input_dim: 2
+        hidden_dim: 64
+        lr: 0.0005
+        epochs: 500
+        coeff: 0.01
