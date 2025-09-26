@@ -1,0 +1,54 @@
+experiment:
+  name: default_experiment
+  model_runs: 1
+  seed: 42
+
+  data:
+    function: # List [function, noise_function]
+      - [f_non_linear_3_features, noise_non_linear_3_features]
+
+    train_data:
+      interval: 
+        - [-1, 1]
+        - [[-2, -1], [1, 2]]
+      n_instances: 
+        - 25000
+      n_repeats:
+        - 1
+
+    test_data:
+      interval: 
+        - [-4, 4]
+      grid_length: 
+        - 1000
+      test_points:
+        - [-1000, -900, -800, -700, -600, -500, -400, -300, -200, -100, 0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
+
+
+  models:
+    - base_model:
+        hidden_dim: [64, 64]
+        activation: [relu, relu]
+        lr: 0.001
+        epochs: 500
+        batch_size: 128
+        weight_decay: 0
+        p_drop: 0
+        device: cuda
+
+    - mcdropout:
+        p_drop: 0.1
+        n_mc_samples: 100
+
+    - evidential:
+        coeff: 0.01
+
+    - bbb:
+        prior_sigma_1: 1.0
+        prior_sigma_2: 0.1
+        prior_pi: 0.5
+        kl_beta: 0.1
+        n_mc_samples: 100
+      
+    - ensemble:
+        n_members: 3

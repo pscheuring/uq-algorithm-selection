@@ -2,6 +2,7 @@ import itertools
 import json
 import os
 import random
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Union
@@ -9,16 +10,43 @@ from typing import Any, Dict, List, Tuple, Union
 import numpy as np
 import pandas as pd
 import torch
+import torch.nn as nn
 import yaml
 
 from src.constants import RESULTS_DIR, SUMMARY_COLUMNS, SUMMARY_PATH
 from src.data_sampling.data_sampler import DataSampler
 from src.logging import logger
+from src.models.bbb import BayesByBackdrop
+from src.models.ensemble import DeepEnsemble
+from src.models.evidential import DeepEvidentialRegression
+from src.models.mcdropout import MCDropout
 
-# from src.models.bnn import BNN
-from src.models.der import DER
-from src.models.mcdropout_bnn import MCDropoutBNN
-from src.models.sder import SDER
+
+def create_activation(activation: list[str]) -> list[nn.Module]:
+    """
+    Wandelt eine Liste von Strings in eine Liste der passenden nn.Module-Instanzen um.
+
+    Args:
+        activation: z.B. ["relu", "tanh", "leaky_relu"]
+
+    Returns:
+        Liste von nn.Module-Objekten, z.B. [nn.ReLU(), nn.Tanh(), nn.LeakyReLU()]
+    """
+    mapping = {
+        "relu": nn.ReLU,
+        "tanh": nn.Tanh,
+        "sigmoid": nn.Sigmoid,
+        "leaky_relu": nn.LeakyReLU,
+        "softplus": nn.Softplus,
+    }
+
+    modules: list[nn.Module] = []
+    for name in activation:
+        key = name.lower()
+        if key not in mapping:
+            raise ValueError(f"Unknown Activation: {name}")
+        modules.append(mapping[key]())
+    return modules
 
 
 def set_global_seed(seed: int):
@@ -43,10 +71,8 @@ def save_results(
     train_times,
     infer_times,
     job,
-    base_dir=RESULTS_DIR,
+    results_dir,
 ):
-    model_name = job["model_name"]
-    results_dir = generate_result_path(base_dir, model_name, job)
     os.makedirs(results_dir, exist_ok=True)
 
     # Save predictions and uncertainties
@@ -73,20 +99,20 @@ def save_results(
 
 
 def build_model(model_name, model_params):
-    # if model_name == "bnn":
-    #     return BNN(
-    #         **model_params,
-    #     )
-    if model_name == "mcdropout_bnn":
-        return MCDropoutBNN(
+    if model_name == "mcdropout":
+        return MCDropout(
             **model_params,
         )
-    elif model_name == "der":
-        return DER(
+    elif model_name == "ensemble":
+        return DeepEnsemble(
             **model_params,
         )
-    elif model_name == "sder":
-        return SDER(
+    elif model_name == "evidential":
+        return DeepEvidentialRegression(
+            **model_params,
+        )
+    elif model_name == "bbb":
+        return BayesByBackdrop(
             **model_params,
         )
     else:
@@ -232,7 +258,7 @@ def generate_benchmark_jobs(config_path: str) -> List[Dict]:
 
     all_jobs = []
 
-    for fn, noise, tr_int, tr_n, tr_r, te_int, te_grid, (
+    for fn, tr_int, tr_n, tr_r, te_int, te_grid, (
         model_name,
         model_params,
     ) in itertools.product(
@@ -287,8 +313,16 @@ def append_summary(job: Dict, result_dir: str) -> None:
         job (Dict): Full job dict (all parameters).
         result_dir (str): Absolute path to the result folder (will be converted to relative).
     """
-    row = {col: job.get(col, None) for col in SUMMARY_COLUMNS}
-    relative_result_dir = result_dir.split("results/")[1]
+    row = {}
+    for col in SUMMARY_COLUMNS:
+        if col == "function":
+            row[col] = job["function"][0] if "function" in job else None
+        elif col == "noise":
+            row[col] = job["function"][1] if "function" in job else None
+        else:
+            row[col] = job.get(col, None)
+
+    relative_result_dir = result_dir.relative_to(RESULTS_DIR)
 
     row["result_folder"] = relative_result_dir
     row["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -309,29 +343,42 @@ def _as_str(v):
 def job_already_done(job: Dict[str, Any]) -> bool:
     """
     A job is 'done' if any CSV row matches ALL job columns exactly.
-    Complex fields are compared as JSON strings.
+    Special case:
+      - SUMMARY_COLUMNS enthält 'function' und 'noise'
+      - job['function'] ist eine Liste [function_value, noise_value]
+    Complex fields are compared as JSON strings via _as_str.
     """
-    if not os.path.exists(SUMMARY_PATH):
+    # Datei-Checks mit pathlib
+    if not SUMMARY_PATH.exists():
         return False
-    if os.path.getsize(SUMMARY_PATH) == 0:
+    if SUMMARY_PATH.stat().st_size == 0:
         return False
 
-    # read as strings to avoid pandas turning lists into objects/arrays
+    # als Strings lesen, damit Pandas nichts konvertiert
     df = pd.read_csv(SUMMARY_PATH, dtype=str)
 
     if df.empty:
         return False
 
-    # ensure schema matches expected columns
+    # Schema prüfen
     for col in SUMMARY_COLUMNS:
         if col not in df.columns:
             return False
 
-    # build row-wise mask
+    # Helper holt den Job-Wert passend zur Spalte
+    def _job_value_for(col: str):
+        if col == "function":
+            return (job.get("function") or [None, None])[0]
+        if col == "noise":
+            return (job.get("function") or [None, None])[1]
+        return job.get(col, None)
+
+    # gesuchte Werte (als Strings) vorbereiten
+    wanted = {col: _as_str(_job_value_for(col)) for col in SUMMARY_COLUMNS}
+
+    # Zeilen-Maske aufbauen (exakte String-Gleichheit)
     mask = pd.Series(True, index=df.index)
-    for col in SUMMARY_COLUMNS:
-        val = _as_str(job[col])
-        # df is dtype=str, NaNs appear as "nan"; we treat None == "None" only
+    for col, val in wanted.items():
         mask &= df[col] == val
 
     return bool(mask.any())
@@ -342,8 +389,8 @@ def create_full_job_name(job: Dict) -> str:
     Compact string for job description in logs/UIs
     """
     return (
-        f"Func:{job['function']} | "
-        f"Noise:{job['noise']} | "
+        f"Func:{job['function'][0]} | "
+        f"Noise:{job['function'][1]} | "
         f"Train: interval: {job['train_interval']}, instances: {job['train_instances']}, repeats: {job['train_repeats']} | "
         f"Test: interval: {job['test_interval']}, grid_length: {job['test_grid_length']} | "
         f"Seed:{job['random_seed']} | "
@@ -351,16 +398,19 @@ def create_full_job_name(job: Dict) -> str:
     )
 
 
-def generate_result_path(base_dir: str, model_name: str, job: Dict) -> str:
+def generate_result_path(base_dir: str, job: Dict) -> str:
     """
     Build a readable, short path. Example:
       <base>/<model_name>/seed42_fn-nl2_nz-nl2_tr-m2_2_te-m2_2_trn1000x1_ten10000x1_model-bnn/250920_1342_data
     """
-    parts: List[str] = []
+    parts = []
+
+    fn_match = re.search(r"\d+", job["function"][0])
+    nz_match = re.search(r"\d+", job["function"][1])
 
     parts.append(f"seed-{job['random_seed']}")
-    parts.append(f"fn-{job['function']}")
-    parts.append(f"nz-{job['noise']}")
+    parts.append(f"fn-{fn_match.group()}")
+    parts.append(f"nz-{nz_match.group()}")
     parts.append(f"tri-{job['train_interval']}")
     parts.append(f"tei-{job['test_interval']}")
     parts.append(f"trn-{job['train_instances']}x{job['train_repeats']}")
@@ -370,4 +420,10 @@ def generate_result_path(base_dir: str, model_name: str, job: Dict) -> str:
     setting = "_".join(parts)
     timestamp = datetime.now().strftime("%y%m%d_%H%M")
 
-    return Path(base_dir) / model_name / setting / f"{timestamp}"
+    return (
+        Path(base_dir)
+        / job["experiment_name"]
+        / job["model_name"]
+        / setting
+        / f"{timestamp}"
+    )
