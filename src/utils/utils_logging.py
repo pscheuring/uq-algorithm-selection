@@ -44,16 +44,6 @@ def setup_logging() -> None:
     logger.addHandler(file_handler)
     logger.addHandler(stream_handler)
 
-    # Silence noisy libraries
-    for logger_name, logger_obj in logging.root.manager.loggerDict.items():
-        if isinstance(logger_obj, logging.Logger):
-            if (
-                "tsfm_public" in logger_name
-                or "/site-packages/tsfm_public/" in logger_name
-                or "tsfm_public/toolkit" in logger_name
-            ):
-                logger_obj.setLevel(logging.WARNING)
-
 
 setup_logging()
 logger = logging.getLogger(PROJECT_LOGGER_NAME)

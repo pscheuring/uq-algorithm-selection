@@ -1,15 +1,23 @@
-# losses.py
-from typing import Tuple
 import math
 import torch
 import torch.nn.functional as F
-import torch.nn as nn
 
 
-def elbo_loss(y, head_out, kl_value, N: int, beta: float):
-    """
-    NLL_mean + (beta * KL) / N
-    beta steuert die KL-Stärke; N stellt korrekte Skalierung sicher.
+def elbo_loss(y, head_out, kl_value, N: int, beta: float) -> torch.Tensor:
+    """Evidence Lower Bound (ELBO) loss.
+
+    Computes:
+        mean NLL + (beta * KL) / N
+
+    Args:
+        y: Targets, shape (N, D).
+        head_out: Model outputs [mu, log_var], shape (N, 2*D).
+        kl_value: KL divergence term from variational layers.
+        N: Dataset size, for scaling KL.
+        beta: KL weight.
+
+    Returns:
+        Scalar loss tensor.
     """
     mu, logvar = torch.chunk(head_out, 2, dim=-1)
     var = torch.exp(logvar).clamp_min(1e-6)
@@ -25,9 +33,7 @@ def _nig_nll(
     beta: torch.Tensor,
     reduce: bool = True,
 ) -> torch.Tensor:
-    """
-    Negative Log-Likelihood der Student-t-Marginal (Amini).
-    """
+    """Negative log-likelihood of Student-t marginal (Amini et al.)."""
     twoBlambda = 2.0 * beta * (1.0 + v)
     nll = (
         0.5 * torch.log(torch.tensor(math.pi, dtype=y.dtype, device=y.device) / v)
@@ -49,9 +55,7 @@ def _kl_nig(
     a2: torch.Tensor,
     b2: torch.Tensor,
 ) -> torch.Tensor:
-    """
-    KL-Divergenz zwischen zwei NIG-Verteilungen.
-    """
+    """KL divergence between two Normal-Inverse-Gamma distributions."""
     KL = (
         0.5 * (a1 - 1.0) / b1 * (v2 * (mu2 - mu1).pow(2))
         + 0.5 * v2 / v1
@@ -75,8 +79,9 @@ def _nig_reg(
     reduce: bool = True,
     kl: bool = False,
 ) -> torch.Tensor:
-    """
-    Evidenz-Regularisierung (Amini) ODER KL-basierte Variante (optional).
+    """Evidential regularization term (Amini et al.).
+
+    Can use simple evidence penalty (default) or KL-based version.
     """
     error = (y - gamma).abs()
 
@@ -95,9 +100,17 @@ def _nig_reg(
 def der_loss(
     y_true: torch.Tensor, evidential_output: torch.Tensor, coeff: float
 ) -> torch.Tensor:
-    """
-    Gesamtloss = NIG_NLL + coeff * NIG_Reg  (Amini-Variante; KL ist hier NICHT aktiv).
-    Erwartet evidential_output = concat([gamma, v, alpha, beta], dim=-1).
+    """Deep Evidential Regression loss.
+
+    Total loss = NIG NLL + coeff * regularization term.
+
+    Args:
+        y_true: Targets, shape (N, D).
+        evidential_output: Model outputs [gamma, v, alpha, beta], shape (N, 4*D).
+        coeff: Weight for regularization term.
+
+    Returns:
+        Scalar loss tensor.
     """
     gamma, v, alpha, beta = torch.chunk(evidential_output, 4, dim=-1)
     loss_nll = _nig_nll(y_true, gamma, v, alpha, beta, reduce=True)

@@ -5,22 +5,22 @@ experiment:
 
   data:
     function: # List [function, noise_function]
-      - [f_non_linear_1_feature, noise_non_linear_1_feature]
+      # - [f_non_linear_1_feature, noise_non_linear_1_feature]
       - [f_non_linear_2_features, noise_non_linear_2_features]
-      - [f_non_linear_3_features, noise_non_linear_3_features]
-      - [f_non_linear_5_features, noise_non_linear_5_features]
-      - [f_non_linear_10_features, noise_non_linear_5_features]
-      - [f_non_linear_25_features, noise_non_linear_5_features]
-      - [f_non_linear_50_features, noise_non_linear_10_features]
-      - [f_non_linear_100_features, noise_non_linear_10_features]
-      - [f_non_linear_250_features, noise_non_linear_15_features]
-      - [f_non_linear_500_features, noise_non_linear_20_features]
-      - [f_non_linear_1000_features, noise_non_linear_25_features]
+      # - [f_non_linear_3_features, noise_non_linear_3_features]
+      # - [f_non_linear_5_features, noise_non_linear_5_features]
+      # - [f_non_linear_10_features, noise_non_linear_5_features]
+      # - [f_non_linear_25_features, noise_non_linear_5_features]
+      # - [f_non_linear_50_features, noise_non_linear_10_features]
+      # - [f_non_linear_100_features, noise_non_linear_10_features]
+      # - [f_non_linear_250_features, noise_non_linear_15_features]
+      # - [f_non_linear_500_features, noise_non_linear_20_features]
+      # - [f_non_linear_1000_features, noise_non_linear_25_features]
 
     train_data:
       interval: 
         - [-1, 1]
-        - [[-2, -1], [1, 2]]
+        # - [[-2, -1], [1, 2]]
       n_instances: 
         - 10000
       n_repeats:
@@ -30,7 +30,7 @@ experiment:
       interval: 
         - [-50, 50]
       grid_length: 
-        - 1000
+        - 100
 
 
   models:
@@ -41,16 +41,18 @@ experiment:
     #     epochs: 300
     #     mc_samples: 200
 
-    # - sder:
-    #     input_dim: 1
-    #     hidden_dim: 64
-    #     learning_rate: 0.005
-    #     epochs: 500
-    #     coeff: 2.0
+    - mcdropout:
+        hidden_dim: 64
+        p_drop: 0.1
+        lr: 0.005
+        weight_decay: 0.0001
+        epochs: 500
+        batch_size: 128
+        n_mc_samples: 100
 
     - der:
-        input_dim: 2
         hidden_dim: 64
         lr: 0.0005
         epochs: 500
         coeff: 0.01
+        batch_size: 128

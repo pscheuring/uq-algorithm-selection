@@ -2,67 +2,71 @@ from typing import Callable, Dict, List, Union, Tuple
 import numpy as np
 
 
-def f_non_linear_two_features(X: np.ndarray) -> np.ndarray:
+def f_non_linear_2_features(X: np.ndarray) -> np.ndarray:
     x1, x2 = X[:, 0], X[:, 1]
     return np.sin(x1) + 0.5 * (x2**2)
 
 
-def f_non_linear_three_features(X: np.ndarray) -> np.ndarray:
+def f_non_linear_3_features(X: np.ndarray) -> np.ndarray:
     x1, x2, x3 = X[:, 0], X[:, 1], X[:, 2]
     return np.sin(x1) + x2 * x3
 
 
-def noise_non_linear_two_features(
-    X: np.ndarray, rng: np.random.Generator
-) -> np.ndarray:
-    x1 = X[:, 0]
-    sigma = 0.1 * (1.0 + np.abs(x1))
-    return rng.normal(loc=0.0, scale=sigma, size=X.shape[0])
+def sigma_non_linear_2_features(X: np.ndarray) -> np.ndarray:
+    """Deterministische Rausch-Skala σ(X). Kein Ziehen von Noise hier!"""
+    x1, x2 = X[:, 0], X[:, 1]
+    return np.sin(x1) + (1.0 + np.abs(x2))
 
 
-FUNCTIONS = {
-    "non_linear_two_features": f_non_linear_two_features,
-    "non_linear_three_features": f_non_linear_three_features,
+FUNCTIONS: Dict[str, Callable[[np.ndarray], np.ndarray]] = {
+    "f_non_linear_2_features": f_non_linear_2_features,
+    "f_non_linear_3_features": f_non_linear_3_features,
 }
 
-NOISES = {
-    "non_linear_two_features": noise_non_linear_two_features,
+SIGMAS: Dict[str, Callable[[np.ndarray], np.ndarray]] = {
+    "sigma_non_linear_2_features": sigma_non_linear_2_features,
 }
 
 
 class DataSampler:
     """
     Minimalistic data sampler. Expects a flat config dictionary with keys:
-      seed, function, noise,
-      train_interval, train_n_instances, train_n_repeats,
-      test_interval, test_grid_length (or test_n_instances/test_n_repeats)
+      seed, function, sigma,
+      train_interval, train_instances, train_repeats,
+      test_interval, test_grid_length,
+      (optional) test_points  # flache Liste -> wird bei d>1 zu [v,...,v] gekachelt
     """
 
     def __init__(
         self,
         job: Dict[str, Union[str, int, float, list]],
         functions: Dict[str, Callable] = FUNCTIONS,
-        noises: Dict[str, Callable] = NOISES,
+        sigmas: Dict[str, Callable] = SIGMAS,
     ) -> None:
         self.job = job
         self.functions = functions
-        self.noises = noises
+        self.sigmas = sigmas
+
+    # --------------------------
+    # Public API
+    # --------------------------
 
     def sample_train_data(self) -> Dict[str, np.ndarray]:
         job = self.job
         fn = self.functions[job["function"][0]]
-        noise_fn = self.noises[job["function"][1]]
+        sigma_fn = self.sigmas[job["function"][1]]
+
         interval_spec = job["train_interval"]
         n_instances = int(job["train_instances"])
         n_repeats = int(job["train_repeats"])
 
-        # Infer feature dimension
-        dim = self._probe_dim(fn)
+        # Feature-Dimension ermitteln
+        n_features = self._probe_dim(fn)
 
-        # Initialize random number generator
-        rng = np.random.default_rng(job["random_seed"])
+        # RNG
+        rng = np.random.default_rng(job["seed"])
 
-        # Inline interval normalization (single [a,b] vs [[a,b],[c,d],...])
+        # Intervalle normalisieren: [a,b] oder [[a,b], [c,d], ...]
         if len(interval_spec) == 2 and not isinstance(interval_spec[0], (list, tuple)):
             intervals: List[Tuple[float, float]] = [
                 (float(interval_spec[0]), float(interval_spec[1]))
@@ -70,9 +74,11 @@ class DataSampler:
         else:
             intervals = [(float(a), float(b)) for a, b in interval_spec]
 
-        start, end = self._choose_interval_bounds(rng, intervals, n_instances, dim)
+        start, end = self._choose_interval_bounds(
+            rng, intervals, n_instances, n_features
+        )
 
-        # Sample uniformly from chosen intervals (vectorized over instances and features)
+        # Uniform aus gewählten Intervallen ziehen
         X_unique = rng.uniform(start, end)
 
         X = (
@@ -81,37 +87,64 @@ class DataSampler:
             else np.repeat(X_unique, repeats=n_repeats, axis=0)
         )
 
+        # Targets
         y_clean = fn(X)
-        noise = noise_fn(X, rng)
+        sigma = sigma_fn(X)
+        noise = rng.normal(loc=0.0, scale=sigma, size=X.shape[0])
         y = y_clean + noise
-        return {"X": X, "y": y, "y_clean": y_clean, "noise": noise}
+
+        return {
+            "X": X,
+            "y": y,
+            "y_clean": y_clean,
+            "sigma": sigma,
+            "n_features": n_features,
+        }
 
     def sample_test_data(self) -> Dict[str, np.ndarray]:
         job = self.job
-        fn = self.functions[job["function"]]
-        noise_fn = self.noises[job["noise"]]
+        fn = self.functions[job["function"][0]]
+        sigma_fn = self.sigmas[job["function"][1]]
 
-        # infer feature dimension
-        d = self._probe_dim(fn)
+        n_features = self._probe_dim(fn)
 
-        # RNG
-        rng = np.random.default_rng(job["random_seed"])
-
-        # single interval [min_val, max_val] for test
+        # --- Grid bauen (robust gegenüber Liste/Skalar) ---
         min_val, max_val = map(float, job["test_interval"])
-        grid_length = job["test_grid_length"]
 
-        # build Cartesian grid with equal spacing per feature
+        # test_grid_length: int oder [int]
+        grid_length_val = job["test_grid_length"]
+        grid_length = grid_length_val
+
+        X_list = []
+
         axis = np.linspace(min_val, max_val, grid_length, dtype=np.float64)
-        mesh = np.meshgrid(*([axis] * d), indexing="xy")
-        X = np.stack(mesh, axis=-1).reshape(-1, d)
+        mesh = np.meshgrid(*([axis] * n_features), indexing="xy")
+        X_grid = np.stack(mesh, axis=-1).reshape(-1, n_features)
+        X_list.append(X_grid)
 
-        # targets
-        y_clean = fn(X)
-        noise = noise_fn(X, rng)
-        y = y_clean + noise
+        # --- Zusätzliche Testpunkte integrieren ---
+        test_points = job.get("test_points", None)
+        if test_points is not None:
+            # Fall 1: flache Liste von Skalaren -> bei d==1 normal,
+            # bei d>1 zu [v, v, ..., v] (gleicher Wert in allen Dimensionen) erweitern
+            if all(not isinstance(t, (list, tuple, np.ndarray)) for t in test_points):
+                vals = np.asarray(test_points, dtype=np.float64).reshape(-1, 1)
+                if n_features == 1:
+                    X_extra = vals
+                else:
+                    X_extra = np.tile(vals, (1, n_features))
+                X_list.append(X_extra)
 
-        return {"X": X, "y": y, "y_clean": y_clean, "noise": noise}
+        # Kombinieren + Deduplizieren
+        X = np.vstack(X_list)
+        # np.unique für Reihen
+        X = np.unique(X, axis=0)
+
+        # Targets
+        y = fn(X)
+        sigma = sigma_fn(X)
+
+        return {"X": X, "y": y, "sigma": sigma}
 
     def _probe_dim(self, f: Callable) -> int:
         for d in range(1, 11):

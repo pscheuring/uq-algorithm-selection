@@ -5,48 +5,16 @@ import random
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Dict, List
 
 import numpy as np
 import pandas as pd
 import torch
-import torch.nn as nn
 import yaml
+from copy import deepcopy
 
 from src.constants import RESULTS_DIR, SUMMARY_COLUMNS, SUMMARY_PATH
-from src.data_sampling.data_sampler import DataSampler
-from src.logging import logger
-from src.models.bbb import BayesByBackdrop
-from src.models.ensemble import DeepEnsemble
-from src.models.evidential import DeepEvidentialRegression
-from src.models.mcdropout import MCDropout
-
-
-def create_activation(activation: list[str]) -> list[nn.Module]:
-    """
-    Wandelt eine Liste von Strings in eine Liste der passenden nn.Module-Instanzen um.
-
-    Args:
-        activation: z.B. ["relu", "tanh", "leaky_relu"]
-
-    Returns:
-        Liste von nn.Module-Objekten, z.B. [nn.ReLU(), nn.Tanh(), nn.LeakyReLU()]
-    """
-    mapping = {
-        "relu": nn.ReLU,
-        "tanh": nn.Tanh,
-        "sigmoid": nn.Sigmoid,
-        "leaky_relu": nn.LeakyReLU,
-        "softplus": nn.Softplus,
-    }
-
-    modules: list[nn.Module] = []
-    for name in activation:
-        key = name.lower()
-        if key not in mapping:
-            raise ValueError(f"Unknown Activation: {name}")
-        modules.append(mapping[key]())
-    return modules
+from src.utils.utils_logging import logger
 
 
 def set_global_seed(seed: int):
@@ -57,165 +25,6 @@ def set_global_seed(seed: int):
     # torch.use_deterministic_algorithms(True)
     # torch.backends.cudnn.deterministic = True
     # torch.backends.cudnn.benchmark = False
-
-
-def save_results(
-    preds_all,
-    epistemic_all,
-    aleatoric_all,
-    aleatoric_true,
-    X_test,
-    X_train,
-    y_test,
-    y_train,
-    train_times,
-    infer_times,
-    job,
-    results_dir,
-):
-    os.makedirs(results_dir, exist_ok=True)
-
-    # Save predictions and uncertainties
-    np.save(results_dir / "y_pred_all.npy", preds_all)
-    np.save(results_dir / "epistemic_all.npy", epistemic_all)
-    np.save(results_dir / "aleatoric_all.npy", aleatoric_all)
-    np.save(results_dir / "aleatoric_true.npy", aleatoric_true)
-
-    # Save train and test data
-    np.save(results_dir / "X_test.npy", X_test)
-    np.save(results_dir / "X_train.npy", X_train)
-    np.save(results_dir / "y_true.npy", y_test)
-    np.save(results_dir / "y_train.npy", y_train)
-
-    # Save times
-    np.save(results_dir / "train_times.npy", np.array(train_times))
-    np.save(results_dir / "infer_times.npy", np.array(infer_times))
-
-    # Save config
-    with open(results_dir / "config.json", "w") as f:
-        json.dump(job, f, indent=2)
-
-    logger.info(f"Saved results to: {results_dir}")
-
-
-def build_model(model_name, model_params):
-    if model_name == "mcdropout":
-        return MCDropout(
-            **model_params,
-        )
-    elif model_name == "ensemble":
-        return DeepEnsemble(
-            **model_params,
-        )
-    elif model_name == "evidential":
-        return DeepEvidentialRegression(
-            **model_params,
-        )
-    elif model_name == "bbb":
-        return BayesByBackdrop(
-            **model_params,
-        )
-    else:
-        raise ValueError(f"Unknown model name: {model_name}")
-
-
-# def sample_data(config):
-#     data_cfg = config["data"]
-#     train_data_cfg = sampling_cfg["train"]
-#     test_data_cfg = sampling_cfg["test"]
-
-#     # Choose sampler
-#     sampler_type = sampling_cfg["sampler"]
-
-#     if sampler_type == "single":
-#         sampler = CubicSingleFeatureSampler(seed=sampling_cfg["seed"])
-#         train_df = sampler.sample_train_data(
-#             n_unique=train_data_cfg["n_unique"],
-#             n_repeats=train_data_cfg["n_repeats"],
-#             min_val=train_data_cfg["min_val"],
-#             max_val=train_data_cfg["max_val"],
-#             n_sparse_center=train_data_cfg["n_sparse_center"],
-#             use_sparse_center=train_data_cfg["use_sparse_center"],
-#         )
-#         test_df = sampler.sample_test_data(
-#             n_points=test_data_cfg["n_points"],
-#             min_val=test_data_cfg["min_val"],
-#             max_val=test_data_cfg["max_val"],
-#         )
-
-#     elif sampler_type == "x3":
-#         sampler = x3Sampler(
-#             n_samples=sampling_cfg["n_samples"], seed=sampling_cfg["seed"]
-#         )
-#         x_min = sampling_cfg["x_min"]
-#         x_max = sampling_cfg["x_max"]
-#         train_df = sampler.sample_train_data(x_min=x_min, x_max=x_max, train=True)
-#         test_df = sampler.sample_test_data(x_min=-7, x_max=7, train=False)
-#         test_df["aleatoric_true"] = 3.0
-
-#     elif sampler_type == "linear":
-#         sampler = LinearMultiFeatureSampler(
-#             n_features=sampling_cfg["n_features"], seed=sampling_cfg["seed"]
-#         )
-#         train_df = sampler.sample_train_data(
-#             n_unique=train_data_cfg["n_unique"],
-#             n_repeats=train_data_cfg["n_repeats"],
-#             min_val=train_data_cfg["min_val"],
-#             max_val=train_data_cfg["max_val"],
-#             sparse_center_frac=train_data_cfg["sparse_center_frac"],
-#         )
-#         test_df = sampler.sample_test_grid(
-#             grid_length=test_data_cfg["grid_length"],
-#             min_val=test_data_cfg["min_val"],
-#             max_val=test_data_cfg["max_val"],
-#         )
-#     else:
-#         raise ValueError(f"Unknown sampler type: {sampler_type}")
-
-#     return train_df, test_df
-
-
-def create_train_test_data(
-    job: Dict[str, Union[str, int, float, list]],
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    Baut Trainings- und Test-DataFrames aus dem gegebenen Konfig-Dict.
-
-    Erwartete Keys im config (entspricht deiner Klasse):
-      - seed: int
-      - function: str  (Key in FUNCTIONS)
-      - noise: str     (Key in NOISES)
-      - train_interval: [a,b] oder [[a,b], [c,d], ...]
-      - train_n_instances: int
-      - train_n_repeats: int
-      - test_interval: [a,b]
-      - test_grid_length: int
-
-    Rückgabe:
-      (df_train, df_test) : Tuple[pd.DataFrame, pd.DataFrame]
-        Spalten: x1..xd, y, y_clean, noise
-    """
-    sampler = DataSampler(job)
-
-    # --- Train ---
-    train = sampler.sample_train_data()
-    d_train = train["X"].shape[1]
-    x_cols_train = [f"x{i + 1}" for i in range(d_train)]
-    df_train = pd.DataFrame(train["X"], columns=x_cols_train)
-    df_train["y"] = train["y"]
-    df_train["y_clean"] = train["y_clean"]
-    df_train["noise"] = train["noise"]
-
-    # --- Test ---
-    test = sampler.sample_test_data()
-    d_test = test["X"].shape[1]
-    x_cols_test = [f"x{i + 1}" for i in range(d_test)]
-    df_test = pd.DataFrame(test["X"], columns=x_cols_test)
-    df_test["y"] = test["y"]
-    df_test["y_clean"] = test["y_clean"]
-    df_test["noise"] = test["noise"]
-
-    return df_train, df_test
 
 
 def load_yaml(path: str) -> dict:
@@ -251,10 +60,21 @@ def generate_benchmark_jobs(config_path: str) -> List[Dict]:
 
     # Models config: list of {model_name: {params}}
     model_cfg = experiment_cfg["models"]
+    # --- Base-Params extrahieren ---
+    base_params = {}
+    for model in model_cfg:
+        if "base_model" in model:
+            base_params = dict(model["base_model"])
+            break
+
     models_expanded = []
-    for item in model_cfg:
-        ((name, params),) = item.items()
-        models_expanded.append((name, dict(params)))
+    for model in model_cfg:
+        if "base_model" in model:
+            continue
+        name, params = next(iter(model.items()))
+        merged = deepcopy(base_params)
+        merged.update(params)
+        models_expanded.append((name, merged))
 
     all_jobs = []
 
@@ -273,7 +93,7 @@ def generate_benchmark_jobs(config_path: str) -> List[Dict]:
         job = {
             "experiment_name": experiment_name,
             "model_runs": model_runs,
-            "random_seed": seed,
+            "seed": seed,
             "function": fn,
             "train_interval": tr_int,
             "train_instances": tr_n,
@@ -393,7 +213,7 @@ def create_full_job_name(job: Dict) -> str:
         f"Noise:{job['function'][1]} | "
         f"Train: interval: {job['train_interval']}, instances: {job['train_instances']}, repeats: {job['train_repeats']} | "
         f"Test: interval: {job['test_interval']}, grid_length: {job['test_grid_length']} | "
-        f"Seed:{job['random_seed']} | "
+        f"Seed:{job['seed']} | "
         f"Model:{job['model_name']}"
     )
 
@@ -408,7 +228,7 @@ def generate_result_path(base_dir: str, job: Dict) -> str:
     fn_match = re.search(r"\d+", job["function"][0])
     nz_match = re.search(r"\d+", job["function"][1])
 
-    parts.append(f"seed-{job['random_seed']}")
+    parts.append(f"seed-{job['seed']}")
     parts.append(f"fn-{fn_match.group()}")
     parts.append(f"nz-{nz_match.group()}")
     parts.append(f"tri-{job['train_interval']}")
@@ -427,3 +247,42 @@ def generate_result_path(base_dir: str, job: Dict) -> str:
         / setting
         / f"{timestamp}"
     )
+
+
+def save_results(
+    preds_all,
+    epistemic_all,
+    aleatoric_all,
+    aleatoric_true,
+    X_test,
+    X_train,
+    y_test,
+    y_train,
+    train_times,
+    infer_times,
+    job,
+    results_dir,
+):
+    os.makedirs(results_dir, exist_ok=True)
+
+    # Save predictions and uncertainties
+    np.save(results_dir / "y_pred_all.npy", preds_all)
+    np.save(results_dir / "epistemic_all.npy", epistemic_all)
+    np.save(results_dir / "aleatoric_all.npy", aleatoric_all)
+    np.save(results_dir / "aleatoric_true.npy", aleatoric_true)
+
+    # Save train and test data
+    np.save(results_dir / "X_test.npy", X_test)
+    np.save(results_dir / "X_train.npy", X_train)
+    np.save(results_dir / "y_true.npy", y_test)
+    np.save(results_dir / "y_train.npy", y_train)
+
+    # Save times
+    np.save(results_dir / "train_times.npy", np.array(train_times))
+    np.save(results_dir / "infer_times.npy", np.array(infer_times))
+
+    # Save config
+    with open(results_dir / "config.json", "w") as f:
+        json.dump(job, f, indent=2)
+
+    logger.info(f"Saved results to: {results_dir}")

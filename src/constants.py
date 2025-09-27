@@ -16,6 +16,7 @@ LOG_DIR = BASE_DIR / "logs" / RUN_TIMESTAMP
 
 # File paths
 LOG_PATH = LOG_DIR / "main.log"
+DEFAULT_EXPERIMENT_PATH = CONFIG_DIR / "default_experiment.yaml"
 EXPERIMENT_FEATURES_PATH = CONFIG_DIR / "experiment_features.yaml"
 EXPERIMENT_INSTANCES_PATH = CONFIG_DIR / "experiment_instances.yaml"
 EXPERIMENT_REPEATS_PATH = CONFIG_DIR / "experiment_repeats.yaml"
@@ -24,48 +25,24 @@ SUMMARY_PATH = RESULTS_DIR / "benchmark_summary.csv"
 
 ### Benchmark summary ###
 SUMMARY_COLUMNS = [
-    "random_seed",
+    "experiment_name",
+    "model_runs",
+    "seed",
     "function",
     "noise",
     "train_interval",
     "train_instances",
     "train_repeats",
     "test_interval",
-    "test_instances",
-    "test_repeats",
+    "test_grid_length",
     "model_name",
     "model_params",
     "result_folder",  # added by append_summary
     "timestamp",  # added by append_summary
 ]
 
-### Mappings ###
-RESULTS_PATH_MAPPINGS = {
-    "context_length": "ctx",
-    "forecast_horizon": "fh",
-    "sampling": {
-        "LastWindow": "last",
-    },
-    "fit_strategy": {
-        "zero-shot": "zs",
-        "few-shot": "fs",
-        "full-shot": "full",
-    },
-    "normalization": {
-        None: "none",
-        "z-score": "z",
-        "min-max": "mm",
-    },
-    "missing_value_handling": {
-        None: "none",
-        "forward-fill": "ff",
-        "back-fill": "bf",
-        "mean": "mean",
-    },
-}
-
 ### Logging ###
 LOGGING_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
-PROJECT_LOGGER_NAME = "ts_foundation_models"
-LOGGING_LEVEL = logging.INFO
+PROJECT_LOGGER_NAME = "uq_algorithm_selection"
+LOGGING_LEVEL = logging.DEBUG

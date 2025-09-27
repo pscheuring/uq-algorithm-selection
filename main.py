@@ -1,29 +1,35 @@
-import os
 import time
-from src.logging import logger
 
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-from src.constants import EXPERIMENT_FEATURES_PATH, SUMMARY_COLUMNS, SUMMARY_PATH
-from src.utils import (
-    build_model,
+from src.constants import (
+    DEFAULT_EXPERIMENT_PATH,
+    RESULTS_DIR,
+    SUMMARY_COLUMNS,
+    SUMMARY_PATH,
+)
+from src.utils.utils_data import create_train_test_data
+from src.utils.utils_logging import logger
+from src.utils.utils_models import build_model
+from src.utils.utils_pipeline import (
+    append_summary,
     create_full_job_name,
-    create_train_test_data,
     generate_benchmark_jobs,
+    generate_result_path,
     job_already_done,
     save_results,
     set_global_seed,
 )
 
 
-def main(n_runs, experiment_path: str):
+def main(experiment_path: str):
     logger.info("Benchmarking started.")
-    benchmark_jobs = generate_benchmark_jobs(EXPERIMENT_FEATURES_PATH)
+    benchmark_jobs = generate_benchmark_jobs(experiment_path)
 
     # Initialize or load summary file
-    if os.path.exists(SUMMARY_PATH):
+    if SUMMARY_PATH.exists():
         summary_df = pd.read_csv(SUMMARY_PATH)
     else:
         summary_df = pd.DataFrame(columns=SUMMARY_COLUMNS)
@@ -43,7 +49,7 @@ def main(n_runs, experiment_path: str):
                 continue
 
             logger.debug(f"Started job: {full_job_name}")
-            df_train, df_test = create_train_test_data(job)
+            df_train, df_test, n_features = create_train_test_data(job)
             x_cols = df_train.columns[df_train.columns.str.startswith("x")]
 
             X_train = df_train.loc[:, x_cols].to_numpy(dtype=np.float32)
@@ -51,7 +57,7 @@ def main(n_runs, experiment_path: str):
 
             y_train = df_train["y"].to_numpy(dtype=np.float32)
             y_test = df_test["y"].to_numpy(dtype=np.float32)
-            noise_test = df_test["noise"].to_numpy(dtype=np.float32)
+            sigma_test = df_test["sigma"].to_numpy(dtype=np.float32)
 
             all_preds = []
             all_epistemic = []
@@ -60,10 +66,12 @@ def main(n_runs, experiment_path: str):
             inference_times = []
 
             for run_idx in range(job["model_runs"]):
-                logger.info(f"Run {run_idx + 1}/{n_runs}")
-                seed = job["random_seed"] + run_idx
+                logger.info(f"Run {run_idx + 1}/{job['model_runs']}")
+                seed = job["seed"] + run_idx
                 set_global_seed(seed)
-                model = build_model(job["model_name"], job["model_params"])
+                model = build_model(
+                    job["model_name"], job["model_params"], job["seed"], n_features
+                )
 
                 # Training time
                 t0 = time.time()
@@ -73,14 +81,7 @@ def main(n_runs, experiment_path: str):
 
                 # Inference time
                 t2 = time.time()
-                if job["model_name"] == "bnn":
-                    y_pred, epistemic, aleatoric = model.predict_with_uncertainties(
-                        X_test, n_mc_samples=job["model_params"]["n_mc_samples"]
-                    )
-                else:
-                    y_pred, epistemic, aleatoric = model.predict_with_uncertainties(
-                        X_test
-                    )
+                y_pred, epistemic, aleatoric = model.predict_with_uncertainties(X_test)
                 t3 = time.time()
                 inference_times.append(t3 - t2)
 
@@ -90,11 +91,12 @@ def main(n_runs, experiment_path: str):
                 all_aleatoric.append(aleatoric)
 
             # Save all results
+            results_dir = generate_result_path(RESULTS_DIR, job)
             save_results(
                 preds_all=np.stack(all_preds),
                 epistemic_all=np.stack(all_epistemic),
                 aleatoric_all=np.stack(all_aleatoric),
-                aleatoric_true=noise_test,
+                aleatoric_true=sigma_test,
                 X_test=X_test,
                 X_train=X_train,
                 y_test=y_test,
@@ -102,8 +104,15 @@ def main(n_runs, experiment_path: str):
                 train_times=train_times,
                 infer_times=inference_times,
                 job=job,
+                results_dir=results_dir,
             )
+            # Update summary
+            append_summary(job, results_dir)
+
+            pbar.update(1)
 
 
 if __name__ == "__main__":
-    main(experiment_path=EXPERIMENT_FEATURES_PATH)
+    main(experiment_path=DEFAULT_EXPERIMENT_PATH)
+    # main(experiment_path=EXPERIMENT_INSTANCES_PATH)
+    # main(experiment_path=EXPERIMENT_REPEATS_PATH)

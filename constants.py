@@ -37,7 +37,7 @@ SUMMARY_COLUMNS = [
     "forecast_horizon",
     "normalization",
     "missing_value_handling",
-    "random_seed",
+    "seed",
     "sampling",
     "timestamp",
     "result_folder",
