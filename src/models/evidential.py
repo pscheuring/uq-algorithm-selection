@@ -61,6 +61,10 @@ class DeepEvidentialRegression(BaseModel):
         self.train()
         X_train = torch.as_tensor(X_train, dtype=torch.float32, device=self.device)
         y_train = torch.as_tensor(y_train, dtype=torch.float32, device=self.device)
+        if y_train.ndim == 1:
+            y_train = y_train.unsqueeze(1)
+        if X_train.ndim == 1:
+            X_train = X_train.unsqueeze(1)
 
         dataset = torch.utils.data.TensorDataset(X_train, y_train)
         loader = torch.utils.data.DataLoader(
@@ -79,17 +83,17 @@ class DeepEvidentialRegression(BaseModel):
                 pred = self(batch_x)  # (B, 4*D)
                 loss = self.loss(batch_y, pred)
                 loss.backward()
-                if clip_grad_norm is not None:
-                    torch.nn.utils.clip_grad_norm_(
-                        self.parameters(), max_norm=clip_grad_norm
-                    )
+                # if clip_grad_norm is not None:
+                #     torch.nn.utils.clip_grad_norm_(
+                #         self.parameters(), max_norm=clip_grad_norm
+                #     )
                 optimizer.step()
                 epoch_loss += loss.item()
                 n_batches += 1
 
-            avg = epoch_loss / max(1, n_batches)
+            avg = epoch_loss / n_batches
             losses.append(avg)
-            logger.debug(f"Epoch {epoch:3d}/{self.epochs}  loss={avg:.6f}")
+            logger.info(f"Epoch {epoch:3d}/{self.epochs}  loss={avg:.6f}")
 
         return losses
 
@@ -106,17 +110,10 @@ class DeepEvidentialRegression(BaseModel):
         device = next(self.parameters()).device
         X_test = torch.as_tensor(X_test, dtype=torch.float32, device=device)
 
-        with torch.no_grad():
-            pred = self(X_test).cpu().numpy()  # (N, 4*D)
-
-        gamma, nu, alpha, beta = pred[:, 0], pred[:, 1], pred[:, 2], pred[:, 3]
-
-        eps = 1e-8
-        nu = np.maximum(nu, eps)
-        alpha = np.maximum(alpha, 1.0 + eps)
-        beta = np.maximum(beta, eps)
+        pred = self(X_test)
+        gamma, v, alpha, beta = torch.chunk(pred, 4, dim=-1)
 
         aleatoric = beta / (alpha - 1.0)
-        epistemic = beta / (nu * (alpha - 1.0))
+        epistemic = beta / (v * (alpha - 1.0))
 
-        return gamma, epistemic, aleatoric
+        return gamma.cpu().numpy(), epistemic.cpu().numpy(), aleatoric.cpu().numpy()

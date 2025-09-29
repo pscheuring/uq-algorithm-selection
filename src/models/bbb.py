@@ -111,7 +111,9 @@ class BayesByBackprop(BaseModel):
         X_train = torch.as_tensor(X_train, dtype=torch.float32, device=self.device)
         y_train = torch.as_tensor(y_train, dtype=torch.float32, device=self.device)
         if y_train.ndim == 1:
-            y_train = y_train[:, None]
+            y_train = y_train.unsqueeze(1)
+        if X_train.ndim == 1:
+            X_train = X_train.unsqueeze(1)
 
         self.dataset_size = int(X_train.shape[0])
 
@@ -151,7 +153,7 @@ class BayesByBackprop(BaseModel):
 
             avg = epoch_loss / max(n_batches, 1)
             losses.append(avg)
-            logger.debug(f"Epoch {epoch:3d}/{self.epochs}  elbo={avg:.6f}")
+            logger.info(f"Epoch {epoch:3d}/{self.epochs}  elbo={avg:.6f}")
 
         return losses
 

@@ -63,6 +63,10 @@ class MCDropout(BaseModel):
         self.train()
         X_train = torch.as_tensor(X_train, dtype=torch.float32, device=self.device)
         y_train = torch.as_tensor(y_train, dtype=torch.float32, device=self.device)
+        if y_train.ndim == 1:
+            y_train = y_train.unsqueeze(1)
+        if X_train.ndim == 1:
+            X_train = X_train.unsqueeze(1)
 
         dataset = torch.utils.data.TensorDataset(X_train, y_train)
         loader = torch.utils.data.DataLoader(
@@ -91,7 +95,7 @@ class MCDropout(BaseModel):
 
             avg = epoch_loss / max(1, n_batches)
             losses.append(avg)
-            logger.debug(f"Epoch {epoch:3d}/{self.epochs}  loss={avg:.6f}")
+            logger.info(f"Epoch {epoch:3d}/{self.epochs}  loss={avg:.6f}")
 
         return losses
 

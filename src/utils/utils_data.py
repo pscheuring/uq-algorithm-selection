@@ -7,21 +7,22 @@ def create_train_test_data(
     job: Dict[str, Union[str, int, float, list]],
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Baut Trainings- und Test-DataFrames aus dem gegebenen Konfig-Dict.
+    Build training and test DataFrames from a given config dictionary.
 
-    Erwartete Keys im config (entspricht deiner Klasse):
-      - seed: int
-      - function: str  (Key in FUNCTIONS)
-      - noise: str     (Key in NOISES)
-      - train_interval: [a,b] oder [[a,b], [c,d], ...]
-      - train_n_instances: int
-      - train_n_repeats: int
-      - test_interval: [a,b]
-      - test_grid_length: int
+    Expected keys in the config (matching the DataSampler class):
+        seed (int): Random seed.
+        function (str): Key in FUNCTIONS.
+        noise (str): Key in NOISES.
+        train_interval (list): [a, b] or [[a, b], [c, d], ...].
+        train_n_instances (int): Number of training instances.
+        train_n_repeats (int): Number of repeats per instance.
+        test_interval (list): [a, b].
+        test_grid_length (int): Number of grid points per axis for the test set.
 
-    Rückgabe:
-      (df_train, df_test) : Tuple[pd.DataFrame, pd.DataFrame]
-        Spalten: x1..xd, y, y_clean, noise
+    Returns:
+        Tuple[pd.DataFrame, pd.DataFrame]:
+            (df_train, df_test).
+            Both DataFrames contain columns x1..xd, y, y_clean, noise.
     """
     sampler = DataSampler(job)
 
@@ -31,7 +32,7 @@ def create_train_test_data(
     x_cols_train = [f"x{i + 1}" for i in range(d_train)]
     df_train = pd.DataFrame(train["X"], columns=x_cols_train)
     df_train["y"] = train["y"]
-    df_train["y_clean"] = train["y_clean"]
+    #    df_train["y_clean"] = train["y_clean"]
     df_train["sigma"] = train["sigma"]
 
     # --- Test ---

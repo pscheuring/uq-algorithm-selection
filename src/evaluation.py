@@ -1,12 +1,13 @@
-import json
 import math
 from pathlib import Path
-from typing import Iterable, Union
-
+from typing import Iterable, Optional, Union, Sequence
+import json
 import numpy as np
 import pandas as pd
 from scipy.stats import spearmanr
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, mean_squared_error, mean_absolute_error
+
+from src.constants import SUMMARY_PATH
 
 
 def nll_from_variance(
@@ -43,40 +44,67 @@ def nll_from_variance(
 
 
 def auroc_ood_from_uncertainties(
-    id_uncertainties: np.ndarray,
-    ood_uncertainties: np.ndarray,
+    X_test: np.ndarray,
+    config: Union[dict, str, Path],
+    epistemic_uncertainties: np.ndarray,
 ) -> float:
     """
-    Computes AUROC for OOD detection using epistemicuncertainty estimates.
+    Compute AUROC for OOD detection based on epistemic uncertainty.
 
-    Assumes that larger epistemic uncertainty indicates OOD. OOD samples are treated
-    as the positive class (label=1), ID samples as the negative class (label=0).
+    Assumptions:
+      - Higher epistemic uncertainty => more likely to be OOD.
+      - OOD (positive, y=1): Only samples where ALL features are outside [lo, hi].
+      - IID (negative, y=0): Only samples where ALL features are inside [lo, hi].
+      - All other samples (mixed cases) are ignored.
 
     Args:
-        id_uncertainties (np.ndarray of shape (n_id,)):
-            Uncertainty scores for in-distribution (ID) samples.
-        ood_uncertainties (np.ndarray of shape (n_ood,)):
-            Uncertainty scores for out-of-distribution (OOD) samples.
+        X_test: Test samples, shape (n_samples, n_features) or (n_samples,)
+        config: Dict or path to config.json with 'train_interval' = [lo, hi]
+        epistemic_uncertainties: Uncertainty values, shape (n_samples,)
 
     Returns:
-        float: AUROC in [0.0, 1.0], where 1.0 means perfect separation
-        (OOD > ID by uncertainty).
+        float: AUROC score in [0, 1].
 
     Raises:
-        ValueError: If inputs are not 1D arrays, contain NaNs/Infs,
-        or are empty.
+        ValueError / FileNotFoundError / KeyError if inputs are invalid.
     """
-    # Scores: higher = more likely OOD
-    y_score = np.concatenate([id_uncertainties, ood_uncertainties], axis=0)
-    y_true = np.concatenate(
-        [
-            np.zeros_like(id_uncertainties, dtype=int),
-            np.ones_like(ood_uncertainties, dtype=int),
-        ],
-        axis=0,
-    )
+    train_interval = config["train_interval"]
+    lo, hi = train_interval[0], train_interval[1]
 
-    return float(roc_auc_score(y_true, y_score))
+    X = np.asarray(X_test)
+    u = np.asarray(epistemic_uncertainties)
+
+    if X.ndim == 1:
+        X = X.reshape(-1, 1)
+    if X.ndim != 2:
+        raise ValueError("X_test must be 1D or 2D (n_samples[, n_features])")
+    if u.ndim != 1:
+        raise ValueError("epistemic_uncertainties must be 1D (n_samples,)")
+
+    n = X.shape[0]
+    if len(u) != n:
+        raise ValueError(
+            f"length mismatch: X_test has {n} samples but uncertainties has {len(u)}"
+        )
+    if not np.isfinite(u).all():
+        raise ValueError("epistemic_uncertainties contains NaN/Inf values")
+
+    # IID: all features in [lo, hi]
+    iid_mask = np.all((X >= lo) & (X <= hi), axis=1)
+
+    # OOD: all features outside (each feature < lo or > hi)
+    ood_mask = np.all((X < lo) | (X > hi), axis=1)
+
+    # Ignore mixed samples
+    use_mask = iid_mask | ood_mask
+    if not use_mask.any():
+        raise ValueError(
+            "No usable samples: all are mixed (neither strictly IID nor strictly OOD)"
+        )
+
+    y_score = u[use_mask]
+    y_true = np.where(ood_mask[use_mask], 1, 0)  # OOD=1 (positive), IID=0 (negative)
+    return roc_auc_score(y_true, y_score)
 
 
 def rmse(y_true: np.ndarray, predictions: np.ndarray) -> float:
@@ -92,7 +120,7 @@ def rmse(y_true: np.ndarray, predictions: np.ndarray) -> float:
     Returns:
         float: RMSE (single scalar).
     """
-    return float(np.sqrt(np.mean((y_true - predictions) ** 2)))
+    return np.sqrt(mean_squared_error(y_true, predictions))
 
 
 def mse(y_true: np.ndarray, predictions: np.ndarray) -> float:
@@ -108,7 +136,7 @@ def mse(y_true: np.ndarray, predictions: np.ndarray) -> float:
     Returns:
         float: MSE (single scalar).
     """
-    return float(np.mean((y_true - predictions) ** 2))
+    return mean_squared_error(y_true, predictions)
 
 
 def mae(y_true: np.ndarray, predictions: np.ndarray) -> float:
@@ -124,7 +152,7 @@ def mae(y_true: np.ndarray, predictions: np.ndarray) -> float:
     Returns:
         float: MAE (single scalar).
     """
-    return float(np.mean(np.abs(y_true - predictions)))
+    return mean_absolute_error(y_true, predictions)
 
 
 def _bin_uncertainty(
@@ -288,7 +316,7 @@ def spearman_aleatoric_rank_corr(
 
 
 def _flatten_dict(d: dict, prefix: str = "") -> dict[str, Union[int, float, str, bool]]:
-    """verschachtelte Dicts in flaches Dict mit Präfixen auflösen (für model_params usw.)"""
+    """Flatten nested dicts into a flat dict with prefixes (for model_params etc.)"""
     out = {}
     for k, v in d.items():
         key = f"{prefix}{k}" if not prefix else f"{prefix}.{k}"
@@ -314,172 +342,114 @@ def _as_1d(a: np.ndarray | None) -> np.ndarray | None:
 
 
 def build_results_df(
-    results_path: Union[str, Path], metrics: Iterable[str]
+    metrics: Iterable[str],
+    filter_dict: Optional[dict[str, Union[str, int, float, list]]] = None,
+    summary_csv: Union[str, Path] = SUMMARY_PATH,
 ) -> pd.DataFrame:
     """
-    Liest einen Ergebnis-Ordner (oder einen Oberordner mit mehreren Ergebnis-Unterordnern)
-    und baut ein DataFrame mit Settings + gewünschten Metriken.
+    Loads `benchmark_summary.csv`, filters it using a dictionary of {column_name: value or [values]},
+    and computes the requested metrics for each filtered row based on the corresponding result_folder.
 
-    Parameters
-    ----------
-    results_path : str | Path
-        Pfad zu einem Ordner, der eine `config.json` und die .npy-Dateien enthält.
-        Wenn der Pfad Unterordner enthält, werden alle Unterordner mit `config.json`
-        als separate Zeilen erfasst.
-    metrics : Iterable[str]
-        Liste der Metrik-Namen, die berechnet werden sollen.
-        Verfügbare Namen (alle liefern Skalar-Spalten):
-            - "rmse"
-            - "mse"
-            - "nll_aleatoric"     (NLL mit aleatorischer Varianz)
-            - "nll_total"         (NLL mit totaler Varianz = aleatoric + epistemic; falls epistemic fehlt, = aleatoric)
-            - "ence_aleatoric"    (ENCE mit aleatorischer Varianz)
-            - "ence_total"        (ENCE mit totaler Varianz; s.o.)
-            - "spearman_aleatoric" (Rangkorrelation zwischen vorhergesagter und wahrer Aleatorik)
-            - "train_time_mean", "train_time_std"
-            - "infer_time_mean", "infer_time_std"
-        (AUROC-OOD wird hier nicht automatisch berechnet, weil dafür ein OOD-Satz nötig ist.)
+    Args:
+        summary_csv (str | Path):
+            Path to the `benchmark_summary.csv`.
+        metrics (Iterable[str]):
+            List of metric names to compute.
+        filter_dict (dict | None):
+            Dictionary of {column_name: value or [values]} used for filtering.
 
-    Returns
-    -------
-    pd.DataFrame
-        Eine Zeile pro Resultat-Ordner, Spalten = Settings + gewünschte Metriken.
+    Returns:
+        pd.DataFrame:
+            DataFrame containing the filtered summary columns along with the requested metrics.
     """
-    results_path = Path(results_path)
 
-    # Kandidatenordner bestimmen (selbst oder Unterordner)
-    candidate_dirs: list[Path] = []
-    if (results_path / "config.json").exists():
-        candidate_dirs = [results_path]
-    else:
-        for p in sorted(results_path.iterdir()):
-            if p.is_dir() and (p / "config.json").exists():
-                candidate_dirs.append(p)
+    summary_csv = Path(summary_csv)
+    base_dir = summary_csv.parent
 
-    rows = []
+    summary_df = pd.read_csv(summary_csv)
 
-    for run_dir in candidate_dirs:
-        # --- Dateien laden (optional robust) ---
-        cfg_path = run_dir / "config.json"
-        with open(cfg_path, "r", encoding="utf-8") as fh:
-            cfg = json.load(fh)
+    # --- einfaches Filtern ---
+    if filter_dict:
+        for key, value in filter_dict.items():
+            if isinstance(value, list):
+                summary_df = summary_df[summary_df[key].isin(value)]
+            else:
+                summary_df = summary_df[summary_df[key] == value]
 
-        # Arrays
+    requested = set(m.strip().lower() for m in metrics)
+
+    def compute_for_run(run_dir: Path) -> dict[str, float]:
         y_true = _as_1d(_load_opt(run_dir / "y_true.npy"))
         y_pred = _as_1d(_load_opt(run_dir / "y_pred_all.npy"))
-        alea_pred = _as_1d(_load_opt(run_dir / "aleatoric_all.npy"))  # Varianz (σ²)
-        alea_true = _as_1d(_load_opt(run_dir / "aleatoric_true.npy"))  # Varianz (σ²)
-        epis_pred = _as_1d(_load_opt(run_dir / "epistemic_all.npy"))  # Varianz (σ²)
-
+        X_test = _as_1d(_load_opt(run_dir / "X_test.npy"))
+        alea_pred = _as_1d(_load_opt(run_dir / "aleatoric_all.npy"))
+        alea_true = _as_1d(_load_opt(run_dir / "aleatoric_true.npy"))
+        epis_pred = _as_1d(_load_opt(run_dir / "epistemic_all.npy"))
         train_times = _as_1d(_load_opt(run_dir / "train_times.npy"))
         infer_times = _as_1d(_load_opt(run_dir / "infer_times.npy"))
+        cfg_path = run_dir / "config.json"
+        with open(cfg_path, "r", encoding="utf-8") as fh:
+            config = json.load(fh)
 
-        # sanity checks
-        if y_true is None or y_pred is None:
-            raise FileNotFoundError(
-                f"{run_dir}: y_true.npy und/oder y_pred_all.npy fehlen."
-            )
+        out: dict[str, float] = {}
 
-        # totale Varianz falls vorhanden
-        if alea_pred is not None and epis_pred is not None:
-            total_var = alea_pred + epis_pred
-        else:
-            total_var = alea_pred  # fallback: nur aleatorisch
-
-        # --- Settings flach machen ---
-        base_cfg = {k: v for k, v in cfg.items() if k != "model_params"}
-        flat_cfg = {
-            **base_cfg,
-            **_flatten_dict({"model_params": cfg.get("model_params", {})}),
-        }
-
-        row: dict[str, Union[int, float, str, bool]] = {}
-        row.update({f"cfg.{k}": v for k, v in flat_cfg.items()})
-
-        # --- Metriken berechnen je nach Wunsch ---
-        requested = set(m.strip().lower() for m in metrics)
-
-        def add(name: str, val: float | None):
+        def add(name: str, val):
             if (
                 val is not None
-                and (isinstance(val, float) or isinstance(val, int))
+                and isinstance(val, (float, int))
                 and math.isfinite(float(val))
             ):
-                row[name] = float(val)
+                out[name] = float(val)
             else:
-                row[name] = np.nan  # falls nicht berechenbar
+                out[name] = np.nan
 
-        if "mae" in requested:
-            add("mae", mae(y_true, y_pred))
+        total_var = alea_pred + epis_pred
 
-        if "rmse" in requested:
-            add("rmse", rmse(y_true, y_pred))
-
-        if "mse" in requested:
-            add("mse", mse(y_true, y_pred))
-
+        if "mae_performance" in requested:
+            add("mae_performance", mae(y_true, y_pred))
+        if "rmse_performance" in requested:
+            add("rmse_perforamnce", rmse(y_true, y_pred))
+        if "mse_performance" in requested:
+            add("mse_performance", mse(y_true, y_pred))
+        if "mae_aleatoric" in requested:
+            add("mae_aleatoric", mae(alea_true, alea_pred))
         if "nll_aleatoric" in requested:
-            add(
-                "nll_aleatoric",
-                nll_from_variance(y_true, y_pred, alea_pred)
-                if alea_pred is not None
-                else np.nan,
-            )
-
+            add("nll_aleatoric", nll_from_variance(y_true, y_pred, alea_pred))
         if "nll_total" in requested:
-            add(
-                "nll_total",
-                nll_from_variance(y_true, y_pred, total_var)
-                if total_var is not None
-                else np.nan,
-            )
-
+            add("nll_total", nll_from_variance(y_true, y_pred, total_var))
         if "ence_aleatoric" in requested:
-            add(
-                "ence_aleatoric",
-                ence(y_true, y_pred, alea_pred) if alea_pred is not None else np.nan,
-            )
-
+            add("ence_aleatoric", ence(y_true, y_pred, alea_pred))
         if "ence_total" in requested:
-            add(
-                "ence_total",
-                ence(y_true, y_pred, total_var) if total_var is not None else np.nan,
-            )
-
+            add("ence_total", ence(y_true, y_pred, total_var))
         if "spearman_aleatoric" in requested:
             add(
-                "spearman_aleatoric",
-                spearman_aleatoric_rank_corr(alea_pred, alea_true)
-                if (alea_pred is not None and alea_true is not None)
-                else np.nan,
+                "spearman_aleatoric", spearman_aleatoric_rank_corr(alea_pred, alea_true)
             )
-
+        if "auroc_ood" in requested:
+            add("auroc_ood", auroc_ood_from_uncertainties(X_test, config, epis_pred))
         if "train_time_mean" in requested:
-            add(
-                "train_time_mean",
-                float(np.mean(train_times)) if train_times is not None else np.nan,
-            )
+            add("train_time_mean", float(np.mean(train_times)))
         if "train_time_std" in requested:
-            add(
-                "train_time_std",
-                float(np.std(train_times)) if train_times is not None else np.nan,
-            )
-
+            add("train_time_std", float(np.std(train_times)))
         if "infer_time_mean" in requested:
-            add(
-                "infer_time_mean",
-                float(np.mean(infer_times)) if infer_times is not None else np.nan,
-            )
+            add("infer_time_mean", float(np.mean(infer_times)))
         if "infer_time_std" in requested:
-            add(
-                "infer_time_std",
-                float(np.std(infer_times)) if infer_times is not None else np.nan,
-            )
+            add("infer_time_std", float(np.std(infer_times)))
 
-        rows.append(row)
+        return out
 
-    df = pd.DataFrame(rows)
-    # Konsistente Spaltenreihenfolge: erst cfg.*, dann Metriken
-    cfg_cols = [c for c in df.columns if c.startswith("cfg.")]
-    metric_cols = [c for c in df.columns if not c.startswith("cfg.")]
-    return df[cfg_cols + metric_cols]
+    metric_rows = []
+    for _, row in summary_df.iterrows():
+        rf = Path(str(row["result_folder"]))
+        run_dir = rf if rf.is_absolute() else (base_dir / rf)
+        metric_rows.append(compute_for_run(run_dir))
+
+    metrics_df = pd.DataFrame(metric_rows, index=summary_df.index)
+
+    out_df = pd.concat(
+        [summary_df.reset_index(drop=True), metrics_df.reset_index(drop=True)], axis=1
+    )
+
+    metric_cols = [c for c in out_df.columns if c in requested]
+    other_cols = [c for c in out_df.columns if c not in requested]
+    return out_df[other_cols + metric_cols]

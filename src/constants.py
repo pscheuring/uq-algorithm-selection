@@ -45,4 +45,4 @@ SUMMARY_COLUMNS = [
 LOGGING_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 PROJECT_LOGGER_NAME = "uq_algorithm_selection"
-LOGGING_LEVEL = logging.DEBUG
+LOGGING_LEVEL = logging.INFO

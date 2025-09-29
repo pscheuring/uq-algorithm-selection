@@ -21,6 +21,7 @@ def elbo_loss(y, head_out, kl_value, N: int, beta: float) -> torch.Tensor:
     """
     mu, logvar = torch.chunk(head_out, 2, dim=-1)
     var = torch.exp(logvar).clamp_min(1e-6)
+    assert mu.shape == y.shape == var.shape, f"{mu.shape} vs {y.shape} vs {var.shape}"
     nll_mean = F.gaussian_nll_loss(mu, y, var, reduction="mean", eps=1e-6)
     return nll_mean + (beta * kl_value) / float(N)
 
@@ -33,7 +34,7 @@ def _nig_nll(
     beta: torch.Tensor,
     reduce: bool = True,
 ) -> torch.Tensor:
-    """Negative log-likelihood of Student-t marginal (Amini et al.)."""
+    """Negative log-likelihood of Student-t marginal (Amini et al. 2020)."""
     twoBlambda = 2.0 * beta * (1.0 + v)
     nll = (
         0.5 * torch.log(torch.tensor(math.pi, dtype=y.dtype, device=y.device) / v)
@@ -86,9 +87,8 @@ def _nig_reg(
     error = (y - gamma).abs()
 
     if kl:
-        omega_v = torch.as_tensor(omega, dtype=y.dtype, device=y.device)
-        omega_a = torch.as_tensor(1.0 + omega, dtype=y.dtype, device=y.device)
-        kl_term = _kl_nig(gamma, v, alpha, beta, gamma, omega_v, omega_a, beta)
+        omega = torch.as_tensor(omega, dtype=y.dtype, device=y.device)
+        kl_term = _kl_nig(gamma, v, alpha, beta, gamma, omega, 1 + omega, beta)
         reg = error * kl_term
     else:
         evi = 2.0 * v + alpha
@@ -113,6 +113,22 @@ def der_loss(
         Scalar loss tensor.
     """
     gamma, v, alpha, beta = torch.chunk(evidential_output, 4, dim=-1)
-    loss_nll = _nig_nll(y_true, gamma, v, alpha, beta, reduce=True)
-    loss_reg = _nig_reg(y_true, gamma, v, alpha, beta, reduce=True, kl=False)
+    assert y_true.shape == gamma.shape, f"y{y_true.shape} vs gamma{gamma.shape}"
+    loss_nll = _nig_nll(y_true, gamma, v, alpha, beta)
+    loss_reg = _nig_reg(y_true, gamma, v, alpha, beta)
     return loss_nll + coeff * loss_reg
+
+
+# def der_loss(y_true: torch.Tensor, evidential_output: torch.Tensor, coeff: float):
+#     gamma, v, alpha, beta = torch.chunk(evidential_output, 4, dim=-1)
+#     error = gamma - y_true
+#     omega = 2.0 * beta * (1.0 + v)
+
+#     return torch.mean(
+#         0.5 * torch.log(math.pi / v)
+#         - alpha * torch.log(omega)
+#         + (alpha + 0.5) * torch.log(error**2 * v + omega)
+#         + torch.lgamma(alpha)
+#         - torch.lgamma(alpha + 0.5)
+#         + coeff * torch.abs(error) * (2.0 * v + alpha)
+#     )

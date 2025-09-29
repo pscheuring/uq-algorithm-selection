@@ -14,7 +14,7 @@ from ipywidgets import interact
 from plotly.subplots import make_subplots
 from sklearn.preprocessing import StandardScaler
 
-from src.constants import META_MODEL_RESULTS_DIR
+from src.constants import RESULTS_DIR
 
 # style_path = BASE_DIR / "src" / "styling.mplstyle"
 # plt.style.use(str(style_path.resolve()))
@@ -1022,7 +1022,7 @@ def interactive_mse_feature_combo_plot(
     button.on_click(update_plot)
 
 
-def load_meta_model_benchmarking_results(folder_name, base_path=META_MODEL_RESULTS_DIR):
+def load_meta_model_benchmarking_results(folder_name, base_path=RESULTS_DIR):
     folder = Path(base_path) / folder_name
 
     # Load arrays
@@ -1072,7 +1072,7 @@ def load_meta_model_benchmarking_results(folder_name, base_path=META_MODEL_RESUL
 
 
 def load_meta_model_benchmarking_filtered_results(
-    folder_name, min_val, max_val, base_path=META_MODEL_RESULTS_DIR
+    folder_name, min_val, max_val, base_path=RESULTS_DIR
 ):
     data = load_meta_model_benchmarking_results(folder_name, base_path)
     df = data["df"]

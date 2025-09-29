@@ -30,32 +30,24 @@ class DenseNormal(nn.Module):
 class DenseNormalGamma(nn.Module):
     """Evidential Regression head (Amini et al.): outputs mu, v>0, alpha>1, beta>0."""
 
-    def __init__(self, in_features: int, target_dim: int) -> None:
+    def __init__(self, in_features: int, target_dim: int, eps: float = 1e-6) -> None:
         super().__init__()
-        self.target_dim: int = int(target_dim)
-        self.out_features: int = 4 * self.target_dim
-        self.proj: nn.Linear = nn.Linear(in_features, self.out_features)
+        self.target_dim = int(target_dim)
+        self.out_features = 4 * self.target_dim
+        self.proj = nn.Linear(in_features, self.out_features)
+        self.eps = eps
 
     @staticmethod
     def evidence(x: torch.Tensor) -> torch.Tensor:
-        """Softplus for positive constraints (more stable than exp)."""
         return F.softplus(x)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Project to [mu, v, alpha, beta].
-
-        Args:
-            x: Input tensor shaped (B, in_features).
-
-        Returns:
-            Tensor shaped (B, 4*D) with [mu, v, alpha, beta].
-        """
         out = self.proj(x)
-        mu, logv, logalpha, logbeta = torch.chunk(out, 4, dim=-1)
-        v = self.evidence(logv)  # v > 0
-        alpha = self.evidence(logalpha) + 1.0  # alpha > 1
-        beta = self.evidence(logbeta)  # beta > 0
-        return torch.cat([mu, v, alpha, beta], dim=-1)
+        gamma, logv, logalpha, logbeta = torch.chunk(out, 4, dim=-1)
+        v = self.evidence(logv) + self.eps  # > 0
+        alpha = self.evidence(logalpha) + 1.0 + self.eps  # > 1
+        beta = self.evidence(logbeta) + self.eps  # > 0
+        return torch.cat([gamma, v, alpha, beta], dim=-1)
 
 
 class VariationalDense(nn.Module):

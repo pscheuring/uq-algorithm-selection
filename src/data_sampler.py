@@ -2,6 +2,11 @@ from typing import Callable, Dict, List, Union, Tuple
 import numpy as np
 
 
+def f_linear_1_feature(X: np.ndarray) -> np.ndarray:
+    x1 = X[:, 0]
+    return x1**3
+
+
 def f_non_linear_2_features(X: np.ndarray) -> np.ndarray:
     x1, x2 = X[:, 0], X[:, 1]
     return np.sin(x1) + 0.5 * (x2**2)
@@ -12,29 +17,42 @@ def f_non_linear_3_features(X: np.ndarray) -> np.ndarray:
     return np.sin(x1) + x2 * x3
 
 
-def sigma_non_linear_2_features(X: np.ndarray) -> np.ndarray:
-    """Deterministische Rausch-Skala σ(X). Kein Ziehen von Noise hier!"""
+def sigma_constant_1_feature(X: np.ndarray) -> np.ndarray:
+    return 3.0
+
+
+def sigma_linear_1_feature(X: np.ndarray) -> np.ndarray:
+    x1 = X[:, 0]
+    return 0.1 * (x1**2)
+
+
+def sigma_linear_2_features(X: np.ndarray) -> np.ndarray:
     x1, x2 = X[:, 0], X[:, 1]
-    return np.sin(x1) + (1.0 + np.abs(x2))
+    return 0.8 * np.abs(x1) + 0.2 * np.abs(x2)
 
 
 FUNCTIONS: Dict[str, Callable[[np.ndarray], np.ndarray]] = {
+    "f_linear_1_feature": f_linear_1_feature,
     "f_non_linear_2_features": f_non_linear_2_features,
     "f_non_linear_3_features": f_non_linear_3_features,
 }
 
 SIGMAS: Dict[str, Callable[[np.ndarray], np.ndarray]] = {
-    "sigma_non_linear_2_features": sigma_non_linear_2_features,
+    "sigma_linear_1_feature": sigma_linear_1_feature,
+    "sigma_linear_2_features": sigma_linear_2_features,
+    "sigma_constant_1_feature": sigma_constant_1_feature,
 }
 
 
 class DataSampler:
     """
-    Minimalistic data sampler. Expects a flat config dictionary with keys:
-      seed, function, sigma,
-      train_interval, train_instances, train_repeats,
-      test_interval, test_grid_length,
-      (optional) test_points  # flache Liste -> wird bei d>1 zu [v,...,v] gekachelt
+    Minimalistic data sampler.
+
+    Expects a flat config dictionary (`job`) with keys:
+      - seed, function, sigma
+      - train_interval, train_instances, train_repeats
+      - test_interval, test_grid_length
+      - (optional) test_points
     """
 
     def __init__(
@@ -47,10 +65,6 @@ class DataSampler:
         self.functions = functions
         self.sigmas = sigmas
 
-    # --------------------------
-    # Public API
-    # --------------------------
-
     def sample_train_data(self) -> Dict[str, np.ndarray]:
         job = self.job
         fn = self.functions[job["function"][0]]
@@ -60,13 +74,12 @@ class DataSampler:
         n_instances = int(job["train_instances"])
         n_repeats = int(job["train_repeats"])
 
-        # Feature-Dimension ermitteln
+        # Determine feature dimension
         n_features = self._probe_dim(fn)
 
-        # RNG
         rng = np.random.default_rng(job["seed"])
 
-        # Intervalle normalisieren: [a,b] oder [[a,b], [c,d], ...]
+        # Normalize intervals: [a, b] or [[a, b], [c, d], ...]
         if len(interval_spec) == 2 and not isinstance(interval_spec[0], (list, tuple)):
             intervals: List[Tuple[float, float]] = [
                 (float(interval_spec[0]), float(interval_spec[1]))
@@ -78,7 +91,7 @@ class DataSampler:
             rng, intervals, n_instances, n_features
         )
 
-        # Uniform aus gewählten Intervallen ziehen
+        # Draw uniform samples from the chosen intervals
         X_unique = rng.uniform(start, end)
 
         X = (
@@ -87,7 +100,6 @@ class DataSampler:
             else np.repeat(X_unique, repeats=n_repeats, axis=0)
         )
 
-        # Targets
         y_clean = fn(X)
         sigma = sigma_fn(X)
         noise = rng.normal(loc=0.0, scale=sigma, size=X.shape[0])
@@ -108,10 +120,8 @@ class DataSampler:
 
         n_features = self._probe_dim(fn)
 
-        # --- Grid bauen (robust gegenüber Liste/Skalar) ---
         min_val, max_val = map(float, job["test_interval"])
 
-        # test_grid_length: int oder [int]
         grid_length_val = job["test_grid_length"]
         grid_length = grid_length_val
 
@@ -122,11 +132,10 @@ class DataSampler:
         X_grid = np.stack(mesh, axis=-1).reshape(-1, n_features)
         X_list.append(X_grid)
 
-        # --- Zusätzliche Testpunkte integrieren ---
         test_points = job.get("test_points", None)
         if test_points is not None:
-            # Fall 1: flache Liste von Skalaren -> bei d==1 normal,
-            # bei d>1 zu [v, v, ..., v] (gleicher Wert in allen Dimensionen) erweitern
+            # Case 1: flat list of scalars -> for d==1 use as-is,
+            # for d>1 expand to [v, v, ..., v] (same value in all dims)
             if all(not isinstance(t, (list, tuple, np.ndarray)) for t in test_points):
                 vals = np.asarray(test_points, dtype=np.float64).reshape(-1, 1)
                 if n_features == 1:
@@ -135,12 +144,8 @@ class DataSampler:
                     X_extra = np.tile(vals, (1, n_features))
                 X_list.append(X_extra)
 
-        # Kombinieren + Deduplizieren
         X = np.vstack(X_list)
-        # np.unique für Reihen
         X = np.unique(X, axis=0)
-
-        # Targets
         y = fn(X)
         sigma = sigma_fn(X)
 
@@ -188,25 +193,25 @@ class DataSampler:
             >>> start, end = choose_interval_bounds(rng, intervals, n_instances=3, dim=2)
             >>> start
             array([[-2., -2.],
-                [-2.,  4.],
-                [ 4.,  4.]])
+                   [-2.,  4.],
+                   [ 4.,  4.]])
             >>> end
-            array([[ 2.,  2.],
-                [ 2.,  6.],
-                [ 6.,  6.]])
+            array([[2., 2.],
+                   [2., 6.],
+                   [6., 6.]])
         """
         intervals_arr = np.asarray(intervals, dtype=float)
 
-        # interval lengths -> probabilities
+        # Interval lengths -> selection probabilities
         interval_lengths = intervals_arr[:, 1] - intervals_arr[:, 0]
         interval_probs = interval_lengths / interval_lengths.sum()
 
-        # pick interval index for each sample
+        # Pick interval index for each sample
         seg_idx = rng.choice(
             len(intervals_arr), size=(n_instances, dim), p=interval_probs
         )
 
-        # directly extract start and end bounds
+        # Directly extract start and end bounds
         start = intervals_arr[seg_idx, 0]
         end = intervals_arr[seg_idx, 1]
 

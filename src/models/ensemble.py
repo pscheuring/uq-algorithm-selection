@@ -58,6 +58,10 @@ class DeepEnsembleMember(BaseModel):
         self.train()
         X_train = torch.as_tensor(X_train, dtype=torch.float32, device=self.device)
         y_train = torch.as_tensor(y_train, dtype=torch.float32, device=self.device)
+        if y_train.ndim == 1:
+            y_train = y_train.unsqueeze(1)
+        if X_train.ndim == 1:
+            X_train = X_train.unsqueeze(1)
 
         dataset = torch.utils.data.TensorDataset(X_train, y_train)
         loader = torch.utils.data.DataLoader(
@@ -140,7 +144,7 @@ class DeepEnsemble:
         losses: list[dict[str, list[float]]] = []
         for m_idx, member in enumerate(self.members):
             member_seed = self.seed + m_idx
-            logger.debug(
+            logger.info(
                 f"\n=== Train member {m_idx + 1}/{len(self.members)} (seed={member_seed}) ==="
             )
             loss = member.fit(

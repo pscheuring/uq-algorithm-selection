@@ -1,49 +1,51 @@
 experiment:
   name: default_experiment
-  model_runs: 1
+  model_runs: 20
   seed: 42
 
   data:
     function: # List [function, noise_function]
-      - [f_non_linear_2_features, sigma_non_linear_2_features]
+     # - [f_non_linear_2_features, sigma_linear_2_features]
+     # - [f_linear_1_feature, sigma_linear_1_feature]
+      - [f_linear_1_feature, sigma_constant_1_feature]
 
     train_data:
       interval: 
-        - [-1, 1]
+        - [-4, 4]
         #- [[-2, -1], [1, 2]]
       n_instances: 
-        - 5000
+        - 1000
       n_repeats:
         - 1
 
     test_data:
       interval: 
-        - [-4, 4]
+        - [-7, 7]
       grid_length: 
-        - 100
-      test_points:
-        - [-1000, -900, -800, -700, -600, -500, -400, -300, -200, -100, 0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
+        - 500
+      #test_points:
+      #  - [-1000, -900, -800, -700, -600, -500, -400, -300, -200, -100, 0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
 
 
   models:
     - base_model:
         hidden_features: [64, 64]
         activations: [relu, relu]
-        lr: 0.001
-        epochs: 100
-        batch_size: 128
+        lr: 0.0005
+        epochs: 500
+        batch_size: 100
         weight_decay: 0
         p_drop: 0
-        shuffle: True
-        device: mps
+        shuffle: False
+        device: cpu
         target_dim: 1
 
     # - mcdropout:
     #     p_drop: 0.1
     #     n_mc_samples: 100
 
-    # - evidential:
-    #     coeff: 0.01
+    - evidential:
+        coeff: 0.01
 
     # - bbb:
     #     prior_sigma1: 1.0
@@ -55,5 +57,5 @@ experiment:
     #     mu_init_std: 0.02
     #     rho_init: -5.0
       
-    - ensemble:
-        n_members: 3
+    # - ensemble:
+    #     n_members: 5

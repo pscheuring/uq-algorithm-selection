@@ -83,7 +83,6 @@ class BaseModel(ABC, nn.Module):
             if device
             else torch.device("cuda" if torch.cuda.is_available() else "cpu")
         )
-
         # Build backbone: [Hidden -> Activation -> (Dropout)]*
         layers: list[nn.Module] = []
         current_in_features = self.in_features
