@@ -1,28 +1,30 @@
 experiment:
-  name: default_experiment
-  model_runs: 20
+  name: complex_function_v2
+  model_runs: 1
   seed: 42
 
   data:
     function: # List [function, noise_function]
-     # - [f_non_linear_2_features, sigma_linear_2_features]
-     # - [f_linear_1_feature, sigma_linear_1_feature]
-      - [f_linear_1_feature, sigma_constant_1_feature]
+      - [f_linear_1_feature_complex_v2, sigma_linear_1_feature_complex_v2]
 
     train_data:
       interval: 
-        - [-4, 4]
-        #- [[-2, -1], [1, 2]]
+        - [-2.0, 2.0]
+        # - [[-2.0, -0.5], [0.5, 2.0]]
       n_instances: 
+        #- 10
+        # - 100
         - 1000
+        #- 10000
+        #- 100000
       n_repeats:
         - 1
 
     test_data:
       interval: 
-        - [-7, 7]
+        - [-4.0, 4.0]
       grid_length: 
-        - 500
+        - 100
       #test_points:
       #  - [-1000, -900, -800, -700, -600, -500, -400, -300, -200, -100, 0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
 
@@ -36,26 +38,29 @@ experiment:
         batch_size: 100
         weight_decay: 0
         p_drop: 0
-        shuffle: False
+        shuffle: True
         device: cpu
         target_dim: 1
 
-    # - mcdropout:
-    #     p_drop: 0.1
-    #     n_mc_samples: 100
+    - mcdropout:
+        p_drop: 0.1
+        n_mc_samples: 100
+        length_scale: 1.0
+        tau: 1.0
 
     - evidential:
         coeff: 0.01
 
-    # - bbb:
-    #     prior_sigma1: 1.0
-    #     prior_sigma2: 0.1
-    #     prior_pi: 0.5
-    #     kl_beta: 0.1
-    #     n_mc_samples: 100
-    #     mu_init_mean: 0
-    #     mu_init_std: 0.02
-    #     rho_init: -5.0
+    - bbb:
+        prior_sigma1: 1.0
+        prior_sigma2: 0.1
+        prior_pi: 0.5
+        kl_beta: 1.0
+        n_mc_samples: 100
+        mu_init_mean: 0
+        mu_init_std: 0.02
+        rho_init: -5.0
       
-    # - ensemble:
-    #     n_members: 5
+    - ensemble:
+        weight_decay: 0.001
+        n_members: 5
