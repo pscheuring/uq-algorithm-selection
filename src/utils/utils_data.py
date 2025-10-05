@@ -18,24 +18,23 @@ def create_train_test_data(
         train_n_repeats (int): Number of repeats per instance.
         test_interval (list): [a, b].
         test_grid_length (int): Number of grid points per axis for the test set.
+        (optional) test_points (list of lists): Specific test points.
 
     Returns:
-        Tuple[pd.DataFrame, pd.DataFrame]:
-            (df_train, df_test).
-            Both DataFrames contain columns x1..xd, y, y_clean, noise.
+        Tuple[pd.DataFrame, pd.DataFrame, int]: df_train, df_test, n_features
     """
     sampler = DataSampler(job)
 
-    # --- Train ---
+    # Train
     train = sampler.sample_train_data()
     d_train = train["X"].shape[1]
     x_cols_train = [f"x{i + 1}" for i in range(d_train)]
     df_train = pd.DataFrame(train["X"], columns=x_cols_train)
     df_train["y"] = train["y"]
-    #    df_train["y_clean"] = train["y_clean"]
+    df_train["y_clean"] = train["y_clean"]
     df_train["sigma"] = train["sigma"]
 
-    # --- Test ---
+    # Test
     test = sampler.sample_test_data()
     d_test = test["X"].shape[1]
     x_cols_test = [f"x{i + 1}" for i in range(d_test)]
@@ -43,7 +42,7 @@ def create_train_test_data(
     df_test["y"] = test["y"]
     df_test["sigma"] = test["sigma"]
 
-    # --- Dimensionen ---
+    # Dimension
     n_features = train["n_features"]
 
     return df_train, df_test, n_features

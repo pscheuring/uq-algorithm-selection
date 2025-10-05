@@ -25,6 +25,8 @@ from src.utils.utils_pipeline import (
 
 
 def main(experiment_path: str):
+    """Run all benchmark jobs defined in the given experiment config."""
+
     logger.info("Benchmarking started.")
     benchmark_jobs = generate_benchmark_jobs(experiment_path)
 
@@ -49,6 +51,7 @@ def main(experiment_path: str):
                 continue
 
             logger.debug(f"Started job: {full_job_name}")
+
             df_train, df_test, n_features = create_train_test_data(job)
             x_cols = df_train.columns[df_train.columns.str.startswith("x")]
 
@@ -69,8 +72,9 @@ def main(experiment_path: str):
                 logger.info(f"Run {run_idx + 1}/{job['model_runs']}")
                 seed = job["seed"] + run_idx
                 set_global_seed(seed)
+
                 model = build_model(
-                    job["model_name"], job["model_params"], job["seed"], n_features
+                    job["model_name"], job["model_params"], seed, n_features
                 )
 
                 # Training time
@@ -96,7 +100,7 @@ def main(experiment_path: str):
                 preds_all=np.stack(all_preds),
                 epistemic_all=np.stack(all_epistemic),
                 aleatoric_all=np.stack(all_aleatoric),
-                aleatoric_true=sigma_test,
+                aleatoric_true=sigma_test**2,
                 X_test=X_test,
                 X_train=X_train,
                 y_test=y_test,

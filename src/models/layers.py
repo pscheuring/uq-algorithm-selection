@@ -42,6 +42,14 @@ class DenseNormalGamma(nn.Module):
         return F.softplus(x)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Project to [mu, v, alpha, beta].
+
+        Args:
+            x: Input tensor shaped (B, in_features).
+
+        Returns:
+            Tensor shaped (B, 4*D) with [mu, v, alpha, beta] concatenated on the last dim.
+        """
         out = self.proj(x)
         gamma, logv, logalpha, logbeta = torch.chunk(out, 4, dim=-1)
         v = self.evidence(logv) + self.eps  # > 0

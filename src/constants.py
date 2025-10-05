@@ -37,8 +37,8 @@ SUMMARY_COLUMNS = [
     "test_grid_length",
     "model_name",
     "model_params",
-    "result_folder",  # added by append_summary
-    "timestamp",  # added by append_summary
+    "result_folder",
+    "timestamp",
 ]
 
 ### Logging ###

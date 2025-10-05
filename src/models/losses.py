@@ -7,7 +7,7 @@ def elbo_loss(y, head_out, kl_value, N: int, beta: float) -> torch.Tensor:
     """Evidence Lower Bound (ELBO) loss.
 
     Computes:
-        mean NLL + (beta * KL) / N
+        mean Gaussian NLL + (beta * KL) / N
 
     Args:
         y: Targets, shape (N, D).
@@ -34,7 +34,7 @@ def _nig_nll(
     beta: torch.Tensor,
     reduce: bool = True,
 ) -> torch.Tensor:
-    """Negative log-likelihood of Student-t marginal (Amini et al. 2020)."""
+    """Negative log-likelihood of Student-t marginal Amini et al. (2020)."""
     twoBlambda = 2.0 * beta * (1.0 + v)
     nll = (
         0.5 * torch.log(torch.tensor(math.pi, dtype=y.dtype, device=y.device) / v)
@@ -80,7 +80,7 @@ def _nig_reg(
     reduce: bool = True,
     kl: bool = False,
 ) -> torch.Tensor:
-    """Evidential regularization term (Amini et al.).
+    """Evidential regularization term Amini et al., 2020.
 
     Can use simple evidence penalty (default) or KL-based version.
     """
@@ -117,18 +117,3 @@ def der_loss(
     loss_nll = _nig_nll(y_true, gamma, v, alpha, beta)
     loss_reg = _nig_reg(y_true, gamma, v, alpha, beta)
     return loss_nll + coeff * loss_reg
-
-
-# def der_loss(y_true: torch.Tensor, evidential_output: torch.Tensor, coeff: float):
-#     gamma, v, alpha, beta = torch.chunk(evidential_output, 4, dim=-1)
-#     error = gamma - y_true
-#     omega = 2.0 * beta * (1.0 + v)
-
-#     return torch.mean(
-#         0.5 * torch.log(math.pi / v)
-#         - alpha * torch.log(omega)
-#         + (alpha + 0.5) * torch.log(error**2 * v + omega)
-#         + torch.lgamma(alpha)
-#         - torch.lgamma(alpha + 0.5)
-#         + coeff * torch.abs(error) * (2.0 * v + alpha)
-#     )
