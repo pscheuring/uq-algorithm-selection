@@ -18,13 +18,13 @@ from src.utils.utils_logging import logger
 
 
 def set_global_seed(seed: int):
+    """Set seed for all used libraries to get reproducible results."""
     random.seed(seed)
-    np.random.seed(seed)
     torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    # torch.use_deterministic_algorithms(True)
-    # torch.backends.cudnn.deterministic = True
-    # torch.backends.cudnn.benchmark = False
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    torch.use_deterministic_algorithms(True)
+    torch.set_num_threads(1)
 
 
 def load_yaml(path: str) -> dict:
@@ -34,9 +34,7 @@ def load_yaml(path: str) -> dict:
 
 
 def generate_benchmark_jobs(config_path: str) -> List[Dict]:
-    """
-    Generate all benchmark jobs (Cartesian product) for the given config.
-    """
+    """Generate all benchmark jobs (Cartesian product) for the given config."""
     # Experiment configs
     experiment_cfg = load_yaml(config_path)["experiment"]
     experiment_name = experiment_cfg["name"]
@@ -168,24 +166,20 @@ def job_already_done(job: Dict[str, Any]) -> bool:
       - job['function'] ist eine Liste [function_value, noise_value]
     Complex fields are compared as JSON strings via _as_str.
     """
-    # Datei-Checks mit pathlib
     if not SUMMARY_PATH.exists():
         return False
     if SUMMARY_PATH.stat().st_size == 0:
         return False
 
-    # als Strings lesen, damit Pandas nichts konvertiert
     df = pd.read_csv(SUMMARY_PATH, dtype=str)
 
     if df.empty:
         return False
 
-    # Schema prüfen
     for col in SUMMARY_COLUMNS:
         if col not in df.columns:
             return False
 
-    # Helper holt den Job-Wert passend zur Spalte
     def _job_value_for(col: str):
         if col == "function":
             return (job.get("function") or [None, None])[0]
@@ -193,10 +187,8 @@ def job_already_done(job: Dict[str, Any]) -> bool:
             return (job.get("function") or [None, None])[1]
         return job.get(col, None)
 
-    # gesuchte Werte (als Strings) vorbereiten
     wanted = {col: _as_str(_job_value_for(col)) for col in SUMMARY_COLUMNS}
 
-    # Zeilen-Maske aufbauen (exakte String-Gleichheit)
     mask = pd.Series(True, index=df.index)
     for col, val in wanted.items():
         mask &= df[col] == val
@@ -205,9 +197,7 @@ def job_already_done(job: Dict[str, Any]) -> bool:
 
 
 def create_full_job_name(job: Dict) -> str:
-    """
-    Compact string for job description in logs/UIs
-    """
+    """Compact string for job description in logs/UIs."""
     return (
         f"Func:{job['function'][0]} | "
         f"Noise:{job['function'][1]} | "
@@ -263,6 +253,7 @@ def save_results(
     job,
     results_dir,
 ):
+    """Save all results, data, times, config to results_dir."""
     os.makedirs(results_dir, exist_ok=True)
 
     # Save predictions and uncertainties
