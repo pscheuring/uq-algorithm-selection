@@ -117,9 +117,14 @@ class BayesByBackprop(BaseModel):
 
         self.dataset_size = int(X_train.shape[0])
 
+        generator = torch.Generator(device="cpu").manual_seed(self.seed)
+
         dataset = torch.utils.data.TensorDataset(X_train, y_train)
         loader = torch.utils.data.DataLoader(
-            dataset, batch_size=self.batch_size, shuffle=self.shuffle
+            dataset,
+            batch_size=self.batch_size,
+            shuffle=self.shuffle,
+            generator=generator,
         )
         optimizer = optim.Adam(
             self.parameters(), lr=self.lr, weight_decay=self.weight_decay
@@ -151,7 +156,7 @@ class BayesByBackprop(BaseModel):
                 epoch_loss += float(loss.item())
                 n_batches += 1
 
-            avg = epoch_loss / max(n_batches, 1)
+            avg = epoch_loss / n_batches
             losses.append(avg)
             logger.info(f"Epoch {epoch:3d}/{self.epochs}  elbo={avg:.6f}")
 
@@ -178,7 +183,7 @@ class BayesByBackprop(BaseModel):
         mus: list[torch.Tensor] = []
         alea: list[torch.Tensor] = []
         for _ in range(self.n_mc_samples):
-            out = self(X_test)  # (N, 2*D)
+            out = self(X_test)
             mu, log_var = torch.chunk(out, 2, dim=-1)
             mus.append(mu)
             alea.append(torch.exp(log_var))

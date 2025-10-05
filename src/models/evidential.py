@@ -20,7 +20,6 @@ class DeepEvidentialRegression(BaseModel):
         """Init model with DER-specific loss coefficient.
 
         Args:
-            *args: Forwarded to BaseModel.
             coeff: Regularization coefficient for DER loss.
             **kwargs: Forwarded to BaseModel.
         """
@@ -53,7 +52,7 @@ class DeepEvidentialRegression(BaseModel):
             X_train: Training inputs, shape (N, in_dim).
             y_train: Training targets, shape (N,) or (N, D).
             shuffle: Shuffle dataset each epoch.
-            clip_grad_norm: If set, clip gradient norm.
+            clip_grad_norm: Optional gradient clipping value.
 
         Returns:
             List of average epoch losses.
@@ -66,9 +65,14 @@ class DeepEvidentialRegression(BaseModel):
         if X_train.ndim == 1:
             X_train = X_train.unsqueeze(1)
 
+        generator = torch.Generator(device="cpu").manual_seed(self.seed)
+
         dataset = torch.utils.data.TensorDataset(X_train, y_train)
         loader = torch.utils.data.DataLoader(
-            dataset, batch_size=self.batch_size, shuffle=self.shuffle
+            dataset,
+            batch_size=self.batch_size,
+            shuffle=self.shuffle,
+            generator=generator,
         )
         optimizer = optim.Adam(
             self.parameters(), lr=self.lr, weight_decay=self.weight_decay
@@ -83,10 +87,10 @@ class DeepEvidentialRegression(BaseModel):
                 pred = self(batch_x)  # (B, 4*D)
                 loss = self.loss(batch_y, pred)
                 loss.backward()
-                # if clip_grad_norm is not None:
-                #     torch.nn.utils.clip_grad_norm_(
-                #         self.parameters(), max_norm=clip_grad_norm
-                #     )
+                if clip_grad_norm is not None:
+                    torch.nn.utils.clip_grad_norm_(
+                        self.parameters(), max_norm=clip_grad_norm
+                    )
                 optimizer.step()
                 epoch_loss += loss.item()
                 n_batches += 1
@@ -113,7 +117,12 @@ class DeepEvidentialRegression(BaseModel):
         pred = self(X_test)
         gamma, v, alpha, beta = torch.chunk(pred, 4, dim=-1)
 
+        # Amini et al. (2020)
         aleatoric = beta / (alpha - 1.0)
         epistemic = beta / (v * (alpha - 1.0))
+
+        # Meinert et al. (2023)
+        # aleatoric = beta * (v + 1) / v / alpha
+        # epistemic = 1.0 / v
 
         return gamma.cpu().numpy(), epistemic.cpu().numpy(), aleatoric.cpu().numpy()

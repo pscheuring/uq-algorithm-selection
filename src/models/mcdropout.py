@@ -10,9 +10,9 @@ from src.models.layers import DenseNormal
 
 
 class MCDropout(BaseModel):
-    """Monte Carlo Dropout model. Based on Gal & Ghahramani (2017).
+    """Monte Carlo Dropout model. Based on Gal & Ghahramani (2016).
 
-    Uses dropout at train *and* test time to approximate Bayesian inference.
+    Uses dropout at train and test time to approximate Bayesian inference.
     Predicts [mu, log_var] and estimates epistemic + aleatoric uncertainty
     via multiple stochastic forward passes.
     """
@@ -20,15 +20,23 @@ class MCDropout(BaseModel):
     def __init__(
         self,
         n_mc_samples: int,
+        length_scale: float,
+        tau: float,
         **kwargs,
     ) -> None:
-        """
+        """Initialize MC Dropout model.
+
         Args:
-            n_mc_samples: Number of stochastic passes at test time.
-            **kwargs: Forwarded to BaseModel (e.g. in_features, hidden_features, p_drop, target_dim, ...).
+            n_mc_samples: Number of Monte Carlo forward passes at inference time.
+            length_scale: Prior length scale parameter (for weight decay / regularization).
+            tau: Precision (inverse variance) parameter for model noise (to scale
+                 epistemic variance term).
+            **kwargs: Forwarded to BaseModel (e.g. in_dim, hidden_dims, dropout_rate, etc.).
         """
         super().__init__(**kwargs)
         self.n_mc_samples = n_mc_samples
+        self.length_scale = length_scale
+        self.tau = tau
 
     def make_hidden_layer(self, in_features: int, hidden_features: int) -> nn.Module:
         """Return plain linear hidden layer."""
@@ -43,6 +51,14 @@ class MCDropout(BaseModel):
         mu, logvar = torch.chunk(pred, 2, dim=-1)
         var = torch.exp(logvar)
         return F.gaussian_nll_loss(mu, y_true, var, reduction="mean", eps=1e-6)
+
+    def _compute_weight_decay(self, dataset_size: int) -> float:
+        """Weight decay λ according to Gal & Ghahramani (2016)."""
+        return (
+            (self.length_scale**2)
+            * (1.0 - self.p_drop)
+            * (2.0 / (dataset_size * self.tau))
+        )
 
     def fit(
         self,
@@ -68,13 +84,20 @@ class MCDropout(BaseModel):
         if X_train.ndim == 1:
             X_train = X_train.unsqueeze(1)
 
+        dataset_size = int(X_train.shape[0])
+
+        lam = self._compute_weight_decay(dataset_size)
+
+        generator = torch.Generator(device="cpu").manual_seed(self.seed)
+
         dataset = torch.utils.data.TensorDataset(X_train, y_train)
         loader = torch.utils.data.DataLoader(
-            dataset, batch_size=self.batch_size, shuffle=self.shuffle
+            dataset,
+            batch_size=self.batch_size,
+            shuffle=self.shuffle,
+            generator=generator,
         )
-        optimizer = optim.Adam(
-            self.parameters(), lr=self.lr, weight_decay=self.weight_decay
-        )
+        optimizer = optim.Adam(self.parameters(), lr=self.lr, weight_decay=lam)
 
         losses: list[float] = []
         for epoch in range(1, self.epochs + 1):
@@ -124,11 +147,11 @@ class MCDropout(BaseModel):
             mu_samples.append(mu)
             var_samples.append(np.exp(logvar))
 
-        mu_samples = np.stack(mu_samples, axis=0)  # (T, N, D)
-        var_samples = np.stack(var_samples, axis=0)  # (T, N, D)
+        mu_samples = np.stack(mu_samples, axis=0)
+        var_samples = np.stack(var_samples, axis=0)
 
-        mu_mean = mu_samples.mean(axis=0)  # (N, D)
-        epistemic = mu_samples.var(axis=0)  # (N, D)
-        aleatoric = var_samples.mean(axis=0)  # (N, D)
+        mu_mean = mu_samples.mean(axis=0)
+        epistemic = mu_samples.var(axis=0)
+        aleatoric = var_samples.mean(axis=0)
 
         return mu_mean, epistemic, aleatoric
