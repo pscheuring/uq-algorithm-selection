@@ -1,6 +1,36 @@
 from typing import Callable, Dict, Union
+
 import numpy as np
 from scipy.stats import qmc
+from scipy.special import expit, softplus
+
+
+def sigma_cubic_rocket_1_feat_range(X: np.ndarray) -> np.ndarray:
+    x1 = X[:, 0]
+    return softplus(
+        -7.385054 + 0.166115 * (x1 + 21.136979) - 0.054731 * (x1 + 0.179175) ** 3
+    )
+
+
+def sigma_cubic_rocket_1_feat_mean(X: np.ndarray) -> np.ndarray:
+    x1 = X[:, 0]
+    return softplus(
+        1.639862 - 1.21189 * (x1 + 4.717278) - 2.273334 * np.cos(x1 + 1.518001)
+    )
+
+
+def f_cubic_rocket_1_feat_range(X: np.ndarray) -> np.ndarray:
+    x1 = X[:, 0]
+    return expit(
+        -13.51356 + 0.04874 * (x1 + 316.761869) - 0.138214 * (x1 + 0.899301) ** 3
+    )
+
+
+def f_cubic_rocket_1_feat_mean(X: np.ndarray) -> np.ndarray:
+    x1 = X[:, 0]
+    return expit(
+        3.24157 - 3.499011 * (x1 - 0.210813) - 8.950747 * np.cos(x1 + 2.073702)
+    )
 
 
 def f_linear_1_feature(X: np.ndarray) -> np.ndarray:
@@ -8,63 +38,17 @@ def f_linear_1_feature(X: np.ndarray) -> np.ndarray:
     return x1**3
 
 
-def f_linear_1_feature_complex(X: np.ndarray) -> np.ndarray:
-    x1 = X[:, 0]
-    return 1.5 + 0.1 * x1**2 + 0.3 * x1 + np.sin(2 * x1 - 2)
-
-
-def f_linear_1_feature_complex_v2(X: np.ndarray) -> np.ndarray:
-    x1 = X[:, 0]
-    return 1 + 0.1 * x1**3 + np.sin(x1 - 2)
-
-
-def sigma_linear_1_feature_complex(X: np.ndarray) -> np.ndarray:
-    x1 = X[:, 0]
-    return 1.3 + np.sin(2 * x1) + 0.3 * x1
-
-
-def sigma_linear_1_feature_complex_v2(X: np.ndarray) -> np.ndarray:
-    x1 = X[:, 0]
-    return 0.5 - 0.1 * (x1**2)
-
-
-def f_non_linear_2_features(X: np.ndarray) -> np.ndarray:
-    x1, x2 = X[:, 0], X[:, 1]
-    return np.sin(x1) + 0.5 * (x2**2)
-
-
-def f_non_linear_3_features(X: np.ndarray) -> np.ndarray:
-    x1, x2, x3 = X[:, 0], X[:, 1], X[:, 2]
-    return np.sin(x1) + x2 * x3
-
-
 def sigma_constant_1_feature(X: np.ndarray) -> np.ndarray:
     return 3.0
 
 
-def sigma_linear_1_feature(X: np.ndarray) -> np.ndarray:
-    x1 = X[:, 0]
-    return 0.1 * (x1**2)
-
-
-def sigma_linear_2_features(X: np.ndarray) -> np.ndarray:
-    x1, x2 = X[:, 0], X[:, 1]
-    return 0.8 * np.abs(x1) + 0.2 * np.abs(x2)
-
-
 FUNCTIONS: Dict[str, Callable[[np.ndarray], np.ndarray]] = {
+    "f_cubic_rocket_1_feat_range": f_cubic_rocket_1_feat_range,
     "f_linear_1_feature": f_linear_1_feature,
-    "f_linear_1_feature_complex": f_linear_1_feature_complex,
-    "f_linear_1_feature_complex_v2": f_linear_1_feature_complex_v2,
-    "f_non_linear_2_features": f_non_linear_2_features,
-    "f_non_linear_3_features": f_non_linear_3_features,
 }
 
 SIGMAS: Dict[str, Callable[[np.ndarray], np.ndarray]] = {
-    "sigma_linear_1_feature": sigma_linear_1_feature,
-    "sigma_linear_1_feature_complex": sigma_linear_1_feature_complex,
-    "sigma_linear_1_feature_complex_v2": sigma_linear_1_feature_complex_v2,
-    "sigma_linear_2_features": sigma_linear_2_features,
+    "sigma_cubic_rocket_1_feat_range": sigma_cubic_rocket_1_feat_range,
     "sigma_constant_1_feature": sigma_constant_1_feature,
 }
 
