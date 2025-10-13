@@ -62,7 +62,7 @@ class VariationalDense(nn.Module):
     """Bayes-by-Backprop linear layer with diagonal Gaussian posterior.
 
     Posterior: w ~ N(mu, sigma^2), with sigma = softplus(rho).
-    Prior: Gaussian scale mixture with two zero-mean components.
+    Prior: Gaussian N(mu_0, sigma_0^2), with sigma_0 = softplus(rho_0).
     Stores KL from the last forward pass for retrieval via kl_loss().
     """
 
@@ -70,9 +70,8 @@ class VariationalDense(nn.Module):
         self,
         in_features: int,
         out_features: int,
-        prior_pi: float,
-        prior_sigma1: float,
-        prior_sigma2: float,
+        prior_mean: float,
+        prior_sigma: float,
         mu_init_mean: float,
         mu_init_std: float,
         rho_init: float,
@@ -94,9 +93,8 @@ class VariationalDense(nn.Module):
         self.bias_rho = nn.Parameter(torch.empty(out_features).fill_(rho_init))
 
         # Prior hyperparameters (buffers, not trainable)
-        self.register_buffer("prior_pi", torch.tensor(float(prior_pi)))
-        self.register_buffer("prior_sigma1", torch.tensor(float(prior_sigma1)))
-        self.register_buffer("prior_sigma2", torch.tensor(float(prior_sigma2)))
+        self.register_buffer("prior_mean", torch.tensor(float(prior_mean)))
+        self.register_buffer("prior_sigma", torch.tensor(float(prior_sigma)))
 
         self._kl: torch.Tensor | None = None  # set on forward()
 
@@ -107,34 +105,23 @@ class VariationalDense(nn.Module):
         sigma = F.softplus(rho)
         eps = torch.randn_like(mu)
         w = mu + sigma * eps
-        return w, mu, sigma
+        return w
 
     @staticmethod
-    def _log_gaussian(
-        x: torch.Tensor, mu: torch.Tensor, sigma: torch.Tensor
+    def _kl_normal_closed(
+        mu: torch.Tensor,
+        sigma_q: torch.Tensor,
+        mu_p: torch.Tensor,
+        sigma_p: torch.Tensor,
     ) -> torch.Tensor:
-        """Elementwise log N(x | mu, sigma)."""
-        return dist.Normal(mu, sigma).log_prob(x)
-
-    def _log_mixture_prior(self, w: torch.Tensor) -> torch.Tensor:
-        """Elementwise log probability under the scale-mixture prior."""
-        device, dtype = w.device, w.dtype
-        pi = torch.as_tensor(self.prior_pi, device=device, dtype=dtype)
-        s1 = torch.as_tensor(self.prior_sigma1, device=device, dtype=dtype)
-        s2 = torch.as_tensor(self.prior_sigma2, device=device, dtype=dtype)
-        zero = torch.zeros((), device=device, dtype=dtype)
-
-        a = self._log_gaussian(w, zero, s1) + torch.log(pi)
-        b = self._log_gaussian(w, zero, s2) + torch.log1p(-pi)
-        return torch.logaddexp(a, b)
-
-    def _kl_term(
-        self, w: torch.Tensor, mu: torch.Tensor, sigma: torch.Tensor
-    ) -> torch.Tensor:
-        """KL contribution for one sample of parameters."""
-        log_q = self._log_gaussian(w, mu, sigma).sum()
-        log_p = self._log_mixture_prior(w).sum()
-        return log_q - log_p
+        """
+        Closed form KL(q(w) || p(w)) elementwise
+        """
+        return (
+            torch.log(sigma_p / sigma_q)
+            + (sigma_q.square() + (mu - mu_p).square()) / (2.0 * sigma_p.square())
+            - 0.5
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Linear projection with MC-sampled weights.
@@ -145,21 +132,23 @@ class VariationalDense(nn.Module):
         Returns:
             Tensor shaped (B, out_features).
         """
-        # Weights
-        w, w_mu, w_sigma = self._sample(self.weight_mu, self.weight_rho)
-        kl = self._kl_term(w, w_mu, w_sigma)
-        # Bias
-        b, b_mu, b_sigma = self._sample(self.bias_mu, self.bias_rho)
-        kl += self._kl_term(b, b_mu, b_sigma)
-
-        self._kl = kl
+        # Weight
+        w = self._sample(self.weight_mu, self.weight_rho)
+        # Biase
+        b = self._sample(self.bias_mu, self.bias_rho)
         return F.linear(x, w, b)
 
     def kl_loss(self) -> torch.Tensor:
-        """KL from the last forward pass; zero if forward hasn't run yet."""
-        if self._kl is None:
-            return torch.tensor(0.0, device=self.weight_mu.device)
-        return self._kl
+        """Closed form KL q(w)||p(w)"""
+        device = self.weight_mu.device
+        mu_p = self.prior_mean.to(device)
+        sig_p = self.prior_sigma.to(device)
+        w_sig = F.softplus(self.weight_rho)
+        b_sig = F.softplus(self.bias_rho)
+
+        w_kl = self._kl_normal_closed(self.weight_mu, w_sig, mu_p, sig_p).sum()
+        b_kl = self._kl_normal_closed(self.bias_mu, b_sig, mu_p, sig_p).sum()
+        return w_kl + b_kl
 
 
 class VariationalDenseNormal(nn.Module):
@@ -169,12 +158,11 @@ class VariationalDenseNormal(nn.Module):
         self,
         in_features: int,
         target_dim: int,
-        prior_pi: float = 0.5,
-        prior_sigma1: float = 1.5,
-        prior_sigma2: float = 0.1,
-        mu_init_mean: float = 0.0,
-        mu_init_std: float = 0.02,
-        rho_init: float = -5.0,
+        prior_mean: float,
+        prior_sigma: float,
+        mu_init_mean: float,
+        mu_init_std: float,
+        rho_init: float,
     ) -> None:
         super().__init__()
         self.target_dim: int = int(target_dim)
@@ -183,9 +171,8 @@ class VariationalDenseNormal(nn.Module):
         self.var_proj = VariationalDense(
             in_features=in_features,
             out_features=out_features,
-            prior_pi=prior_pi,
-            prior_sigma1=prior_sigma1,
-            prior_sigma2=prior_sigma2,
+            prior_mean=prior_mean,
+            prior_sigma=prior_sigma,
             mu_init_mean=mu_init_mean,
             mu_init_std=mu_init_std,
             rho_init=rho_init,
@@ -203,7 +190,3 @@ class VariationalDenseNormal(nn.Module):
         out = self.var_proj(x)
         mu, logvar = torch.chunk(out, 2, dim=-1)
         return torch.cat([mu, logvar], dim=-1)
-
-    def kl_loss(self) -> torch.Tensor:
-        """KL of the internal variational layer."""
-        return self.var_proj.kl_loss()
