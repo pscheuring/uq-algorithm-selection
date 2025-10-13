@@ -10,8 +10,8 @@ from src.constants import (
     SUMMARY_COLUMNS,
     SUMMARY_PATH,
 )
-from src.utils.utils_data import create_train_test_data
 from src.utils.utils_logging import logger
+from src.utils.utils_data import create_train_test_data
 from src.utils.utils_models import build_model
 from src.utils.utils_pipeline import (
     append_summary,
@@ -53,6 +53,7 @@ def main(experiment_path: str):
             logger.debug(f"Started job: {full_job_name}")
 
             df_train, df_test, n_features = create_train_test_data(job)
+            df_train = pd.read_csv("x3_train.csv")
             x_cols = df_train.columns[df_train.columns.str.startswith("x")]
 
             X_train = df_train.loc[:, x_cols].to_numpy(dtype=np.float32)
@@ -62,17 +63,17 @@ def main(experiment_path: str):
             y_test = df_test["y"].to_numpy(dtype=np.float32)
             sigma_test = df_test["sigma"].to_numpy(dtype=np.float32)
 
-            all_preds = []
-            all_epistemic = []
-            all_aleatoric = []
-            train_times = []
-            inference_times = []
-
+            preds_all = []
+            epistemic_all = []
+            aleatoric_all = []
+            nll_all = []
+            train_time_all = []
+            inference_time_all = []
             for run_idx in range(job["model_runs"]):
                 logger.info(f"Run {run_idx + 1}/{job['model_runs']}")
                 seed = job["seed"] + run_idx
                 set_global_seed(seed)
-
+                logger.debug(f"Model params: {job['model_params']}")
                 model = build_model(
                     job["model_name"], job["model_params"], seed, n_features
                 )
@@ -81,32 +82,36 @@ def main(experiment_path: str):
                 t0 = time.time()
                 model.fit(X_train, y_train)
                 t1 = time.time()
-                train_times.append(t1 - t0)
+                train_time_all.append(t1 - t0)
 
                 # Inference time
                 t2 = time.time()
-                y_pred, epistemic, aleatoric = model.predict_with_uncertainties(X_test)
+                y_pred, epistemic, aleatoric, nll = model.predict_with_uncertainties(
+                    X_test, y_test
+                )
                 t3 = time.time()
-                inference_times.append(t3 - t2)
+                inference_time_all.append(t3 - t2)
 
                 # save results for this run
-                all_preds.append(y_pred)
-                all_epistemic.append(epistemic)
-                all_aleatoric.append(aleatoric)
+                preds_all.append(y_pred)
+                epistemic_all.append(epistemic)
+                aleatoric_all.append(aleatoric)
+                nll_all.append(nll)
 
             # Save all results
             results_dir = generate_result_path(RESULTS_DIR, job)
             save_results(
-                preds_all=np.stack(all_preds),
-                epistemic_all=np.stack(all_epistemic),
-                aleatoric_all=np.stack(all_aleatoric),
+                preds_all=np.stack(preds_all),
+                epistemic_all=np.stack(epistemic_all),
+                aleatoric_all=np.stack(aleatoric_all),
+                nll_all=nll_all,
                 aleatoric_true=sigma_test**2,
                 X_test=X_test,
                 X_train=X_train,
                 y_test=y_test,
                 y_train=y_train,
-                train_times=train_times,
-                infer_times=inference_times,
+                train_time_all=train_time_all,
+                infer_time_all=inference_time_all,
                 job=job,
                 results_dir=results_dir,
             )
@@ -118,5 +123,3 @@ def main(experiment_path: str):
 
 if __name__ == "__main__":
     main(experiment_path=DEFAULT_EXPERIMENT_PATH)
-    # main(experiment_path=EXPERIMENT_INSTANCES_PATH)
-    # main(experiment_path=EXPERIMENT_REPEATS_PATH)

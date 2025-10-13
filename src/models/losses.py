@@ -23,7 +23,10 @@ def elbo_loss(y, head_out, kl_value, N: int, beta: float) -> torch.Tensor:
     var = torch.exp(logvar).clamp_min(1e-6)
     assert mu.shape == y.shape == var.shape, f"{mu.shape} vs {y.shape} vs {var.shape}"
     nll_mean = F.gaussian_nll_loss(mu, y, var, reduction="mean", eps=1e-6)
-    return nll_mean + (beta * kl_value) / float(N)
+
+    B = y.shape[0]  # batch size
+    kl_term = beta * kl_value * (B / float(N))
+    return nll_mean + kl_term
 
 
 def _nig_nll(
@@ -117,3 +120,34 @@ def der_loss(
     loss_nll = _nig_nll(y_true, gamma, v, alpha, beta)
     loss_reg = _nig_reg(y_true, gamma, v, alpha, beta)
     return loss_nll + coeff * loss_reg
+
+
+def gaussian_mixture_mc_nll(
+    y: torch.Tensor,  # (N, D)
+    mu_stack: torch.Tensor,  # (S, N, D)
+    var_stack: torch.Tensor,  # (S, N, D)  variance, not std
+    reduce: bool = True,
+) -> torch.Tensor:
+    eps = 1e-8
+    var_stack = var_stack.clamp_min(eps)  # (S,N,D)
+
+    # F.gaussian_nll_loss returns elementwise NLL when reduction='none'
+    # full=True to include the +0.5*log(2*pi) term so it's exactly -log p
+    nll_elems = F.gaussian_nll_loss(
+        mu_stack,  # input/mean: (S,N,D)
+        y.unsqueeze(0),  # target:     (S,N,D)
+        var_stack,  # var:        (S,N,D)
+        full=True,
+        reduction="none",
+    )  # -> (S,N,D)
+
+    # Convert to log-prob and sum over target dims
+    logps_sumD = (-nll_elems).sum(dim=-1)  # (S,N)
+
+    # log( (1/S) * sum_s exp(log p_s) )
+    mc_loglik_per_point = torch.logsumexp(logps_sumD, dim=0) - math.log(
+        mu_stack.shape[0]
+    )  # (N,)
+
+    nll_per_point = -mc_loglik_per_point
+    return nll_per_point.mean() if reduce else nll_per_point

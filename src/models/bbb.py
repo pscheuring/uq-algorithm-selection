@@ -5,7 +5,7 @@ import torch.optim as optim
 
 from src.models.base_model import BaseModel
 from src.models.layers import VariationalDense, VariationalDenseNormal
-from src.models.losses import elbo_loss
+from src.models.losses import elbo_loss, gaussian_mixture_mc_nll
 from src.utils.utils_logging import logger
 
 
@@ -19,9 +19,8 @@ class BayesByBackprop(BaseModel):
     def __init__(
         self,
         kl_beta: float,
-        prior_pi: float,
-        prior_sigma1: float,
-        prior_sigma2: float,
+        prior_mean: float,
+        prior_sigma: float,
         mu_init_mean: float,
         mu_init_std: float,
         rho_init: float,
@@ -32,9 +31,8 @@ class BayesByBackprop(BaseModel):
 
         Args:
             kl_beta: Global KL weight.
-            prior_pi: Mixture weight of prior.
-            prior_sigma1: Std of first prior Gaussian.
-            prior_sigma2: Std of second prior Gaussian.
+            prior_mean: mean of gaussian prior.
+            prior_sigma: std of gaussian prior.
             mu_init_mean: Mean for init of posterior mus.
             mu_init_std: Std for init of posterior mus.
             rho_init: Init value for posterior rhos.
@@ -42,9 +40,8 @@ class BayesByBackprop(BaseModel):
             **kwargs: Forwarded to BaseModel.
         """
         self._prior: dict[str, float] = {
-            "prior_pi": prior_pi,
-            "prior_sigma1": prior_sigma1,
-            "prior_sigma2": prior_sigma2,
+            "prior_mean": prior_mean,
+            "prior_sigma": prior_sigma,
         }
         self._post_init: dict[str, float] = {
             "mu_init_mean": mu_init_mean,
@@ -164,39 +161,52 @@ class BayesByBackprop(BaseModel):
 
     @torch.no_grad()
     def predict_with_uncertainties(
-        self, X_test: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Predict mean, epistemic variance, aleatoric variance.
+        self,
+        X_test: np.ndarray,
+        y_test: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
+        """Predict mean, epistemic, aleatoric variances and MC-based NLL.
 
-        Runs n_mc_samples stochastic forward passes.
-
-        Args:
-            X_test: Test inputs shaped (N, input_dim).
-
-        Returns:
-            Tuple (mu_mean, epistemic_var, aleatoric_var), each (N, D).
+        Runs multiple stochastic forward passes (MC sampling) to estimate
+        predictive mean and uncertainties.
         """
         self.eval()
         device = next(self.parameters()).device
+
         X_test = torch.as_tensor(X_test, dtype=torch.float32, device=device)
+        y_test = torch.as_tensor(y_test, dtype=torch.float32, device=device)
+        if y_test.ndim == 1:
+            y_test = y_test.unsqueeze(1)
+        if X_test.ndim == 1:
+            X_test = X_test.unsqueeze(1)
 
-        mus: list[torch.Tensor] = []
-        alea: list[torch.Tensor] = []
-        for _ in range(self.n_mc_samples):
-            out = self(X_test)
+        S = self.n_mc_samples
+        mu_samples, var_samples = [], []
+
+        # MC sampling
+        for _ in range(S):
+            out = self(X_test)  # (N, 2D)
             mu, log_var = torch.chunk(out, 2, dim=-1)
-            mus.append(mu)
-            alea.append(torch.exp(log_var))
+            mu_samples.append(mu)
+            var_samples.append(torch.exp(log_var))  # σ²_s
 
-        mu_stack = torch.stack(mus, dim=0)
-        alea_stack = torch.stack(alea, dim=0)
+        mu_stack = torch.stack(mu_samples, dim=0)  # (S, N, D)
+        var_stack = torch.stack(var_samples, dim=0)  # (S, N, D)
 
-        mu_mean = mu_stack.mean(dim=0)
-        epistemic = mu_stack.var(dim=0, unbiased=False)
-        aleatoric = alea_stack.mean(dim=0)
+        # Aggregate statistics
+        mu_mean = mu_stack.mean(dim=0)  # (N, D)
+        epistemic = mu_stack.var(dim=0, unbiased=False)  # (N, D)
+        aleatoric = var_stack.mean(dim=0)  # (N, D)
+
+        # MC-based NLL
+        mc_nll_t = gaussian_mixture_mc_nll(
+            y=y_test, mu_stack=mu_stack, var_stack=var_stack, reduce=True
+        )
+        mc_nll = float(mc_nll_t.item())
 
         return (
-            mu_mean.cpu().numpy().astype(np.float32),
-            epistemic.cpu().numpy().astype(np.float32),
-            aleatoric.cpu().numpy().astype(np.float32),
+            mu_mean.cpu().numpy(),
+            epistemic.cpu().numpy(),
+            aleatoric.cpu().numpy(),
+            mc_nll,
         )

@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 
-import numpy as np
 import torch
 import torch.nn as nn
 
@@ -162,33 +161,6 @@ class BaseModel(ABC, nn.Module):
 
         Returns:
             Scalar tensor representing the loss.
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    def fit(self, X_train: np.ndarray, y_train: np.ndarray) -> list[float]:
-        """Train the model.
-
-        Args:
-            X_train: Training inputs, shape (N, in_features).
-            y_train: Training targets, shape (N,) or (N, D).
-
-        Returns:
-            List of average loss values per epoch.
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    def predict_with_uncertainties(
-        self, X_test: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Predict mean and uncertainties on test data.
-
-        Args:
-            X_test: Input array, shape (N, in_features).
-
-        Returns:
-            Tuple (mu, epistemic, aleatoric), each shaped (N, D).
         """
         raise NotImplementedError
 

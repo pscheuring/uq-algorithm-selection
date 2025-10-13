@@ -3,10 +3,10 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from src.models.losses import der_loss
-from src.utils.utils_logging import logger
 from src.models.base_model import BaseModel
 from src.models.layers import DenseNormalGamma
+from src.models.losses import _nig_nll, der_loss
+from src.utils.utils_logging import logger
 
 
 class DeepEvidentialRegression(BaseModel):
@@ -103,26 +103,42 @@ class DeepEvidentialRegression(BaseModel):
 
     @torch.no_grad()
     def predict_with_uncertainties(
-        self, X_test: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Predict mean and decompose uncertainty.
+        self,
+        X_test: np.ndarray,
+        y_test: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
+        """Evidential (NIG) Regression: mu (=gamma), epistemic, aleatoric, and Student-t NLL.
 
         Returns:
-            Tuple (mu, epistemic, aleatoric), each shaped (N, D).
+            mu (N,D), epistemic (N,D), aleatoric (N,D), nll (float, mean per point)
         """
         self.eval()
         device = next(self.parameters()).device
+
         X_test = torch.as_tensor(X_test, dtype=torch.float32, device=device)
+        y_test = torch.as_tensor(y_test, dtype=torch.float32, device=device)
+        if y_test.ndim == 1:
+            y_test = y_test.unsqueeze(1)
+        if X_test.ndim == 1:
+            X_test = X_test.unsqueeze(1)
 
         pred = self(X_test)
         gamma, v, alpha, beta = torch.chunk(pred, 4, dim=-1)
 
         # Amini et al. (2020)
-        aleatoric = beta / (alpha - 1.0)
-        epistemic = beta / (v * (alpha - 1.0))
+        aleatoric = beta / (alpha - 1.0)  # E[σ²]
+        epistemic = beta / (v * (alpha - 1.0))  # Var[μ]
 
         # Meinert et al. (2023)
         # aleatoric = beta * (v + 1) / v / alpha
         # epistemic = 1.0 / v
 
-        return gamma.cpu().numpy(), epistemic.cpu().numpy(), aleatoric.cpu().numpy()
+        nig_nll_tensor = _nig_nll(y_test, gamma, v, alpha, beta, reduce=True)
+        nig_nll = float(nig_nll_tensor.item())
+
+        return (
+            gamma.cpu().numpy(),
+            epistemic.cpu().numpy(),
+            aleatoric.cpu().numpy(),
+            nig_nll,
+        )

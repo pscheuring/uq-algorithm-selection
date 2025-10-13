@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -6,6 +8,7 @@ import torch.optim as optim
 
 from src.models.base_model import BaseModel
 from src.models.layers import DenseNormal
+from src.models.losses import gaussian_mixture_mc_nll
 from src.utils.utils_logging import logger
 
 
@@ -65,7 +68,7 @@ class DeepEnsembleMember(BaseModel):
         var = torch.exp(logvar)
         return F.gaussian_nll_loss(mu, y_true, var, reduction="mean", eps=1e-6)
 
-    def fit(
+    def fit_member(
         self,
         X_train: np.ndarray,
         y_train: np.ndarray,
@@ -129,7 +132,7 @@ class DeepEnsembleMember(BaseModel):
         return {"losses": losses}
 
     @torch.no_grad()
-    def predict_with_uncertainties(
+    def predict_with_uncertainties_member(
         self, X_test: np.ndarray
     ) -> tuple[np.ndarray, np.ndarray]:
         """Predict mean and variance for one member.
@@ -210,32 +213,56 @@ class DeepEnsemble:
 
     @torch.no_grad()
     def predict_with_uncertainties(
-        self, X_test: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Aggregate predictions across members.
-
-        Computes:
-            - mu_mean: Average of member means.
-            - epistemic: Variance across member means.
-            - aleatoric: Average of member variances.
+        self,
+        X_test: np.ndarray,
+        y_test: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
+        """Aggregate predictions across ensemble members and compute NLL over all members.
 
         Args:
-            X_test: Input array, shape (N, in_dim) or (N,) for 1D inputs.
+            X_test (np.ndarray): Test inputs, shape (N, in_dim).
+            y_test (np.ndarray): Ground-truth targets, shape (N,) or (N, D).
 
         Returns:
-            Tuple (mu_mean, epistemic, aleatoric), each shaped (N, D).
+            Tuple:
+                - mu_mean (np.ndarray): Predictive mean, shape (N, D)
+                - epistemic (np.ndarray): Epistemic variance, shape (N, D)
+                - aleatoric (np.ndarray): Aleatoric variance, shape (N, D)
+                - nll (float): Negative log-likelihood over all members
         """
-        mus, vars_ = [], []
+        device = next(self.parameters()).device
+
+        X_test = torch.as_tensor(X_test, dtype=torch.float32, device=device)
+        y_test = torch.as_tensor(y_test, dtype=torch.float32, device=device)
+        if y_test.ndim == 1:
+            y_test = y_test.unsqueeze(1)
+        if X_test.ndim == 1:
+            X_test = X_test.unsqueeze(1)
+
+        mu_samples, var_samples = [], []
+
+        # Aample over ensemble members
         for member in self.members:
-            mu, var = member.predict_with_uncertainties(X_test)
-            mus.append(mu)
-            vars_.append(var)
+            mu, var = member.predict_with_uncertainties_member(X_test)
+            mu_samples.append(mu)  # (N, D)
+            var_samples.append(var)  # (N, D)
 
-        mu_stack = np.stack(mus, axis=0)
-        var_stack = np.stack(vars_, axis=0)
+        mu_stack = torch.stack(mu_samples, dim=0)  # (S, N, D)
+        var_stack = torch.stack(var_samples, dim=0)  # (S, N, D)
 
-        mu_mean = mu_stack.mean(axis=0)
-        epistemic = mu_stack.var(axis=0, ddof=0)
-        aleatoric = var_stack.mean(axis=0)
+        # Aggregate statistics
+        mu_mean = mu_stack.mean(axis=0)  # (N, D)
+        epistemic = mu_stack.var(axis=0, ddof=0)  # (N, D)
+        aleatoric = var_stack.mean(axis=0)  # (N, D)
 
-        return mu_mean, epistemic, aleatoric
+        nll_tensor = gaussian_mixture_mc_nll(
+            y=y_test, mu_stack=mu_stack, var_stack=var_stack, reduce=True
+        )
+        nll = float(nll_tensor.item())
+
+        return (
+            mu_mean.cpu().numpy(),
+            epistemic.cpu().numpy(),
+            aleatoric.cpu().numpy(),
+            nll,
+        )
