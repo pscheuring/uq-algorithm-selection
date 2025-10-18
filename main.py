@@ -12,7 +12,7 @@ from src.constants import (
 )
 from src.utils.utils_logging import logger
 from src.utils.utils_data import create_train_test_data
-from src.utils.utils_models import build_model
+from src.utils.utils_models import build_model, choose_hparams_by_bins
 from src.utils.utils_pipeline import (
     append_summary,
     create_full_job_name,
@@ -53,15 +53,28 @@ def main(experiment_path: str):
             logger.debug(f"Started job: {full_job_name}")
 
             df_train, df_test, n_features = create_train_test_data(job)
-            df_train = pd.read_csv("x3_train.csv")
             x_cols = df_train.columns[df_train.columns.str.startswith("x")]
 
             X_train = df_train.loc[:, x_cols].to_numpy(dtype=np.float32)
             X_test = df_test.loc[:, x_cols].to_numpy(dtype=np.float32)
 
-            y_train = df_train["y"].to_numpy(dtype=np.float32)
-            y_test = df_test["y"].to_numpy(dtype=np.float32)
-            sigma_test = df_test["sigma"].to_numpy(dtype=np.float32)
+            # y_train = df_train["y"].to_numpy(dtype=np.float32)
+            y_train = np.stack(df_train["y"].to_numpy(), axis=0).astype(
+                np.float32
+            )  # (N, d)
+            # y_test = df_test["y"].to_numpy(dtype=np.float32)
+            y_test = np.stack(df_test["y"].to_numpy(), axis=0).astype(
+                np.float32
+            )  # (N, d)
+
+            # Normalize y_train (necessary for MC Dropout, but applicable to all models)
+            y_mean = y_train.mean(axis=0)
+            y_std = y_train.std(axis=0)
+            y_train_norm = (y_train - y_mean) / y_std
+
+            sigma_test = np.stack(df_test["sigma"].to_numpy(), axis=0).astype(
+                np.float32
+            )  # (N, d)
 
             preds_all = []
             epistemic_all = []
@@ -73,21 +86,29 @@ def main(experiment_path: str):
                 logger.info(f"Run {run_idx + 1}/{job['model_runs']}")
                 seed = job["seed"] + run_idx
                 set_global_seed(seed)
+
+                hparams = choose_hparams_by_bins(job["train_instances"])
+                job["model_params"].update(
+                    {
+                        "batch_size": hparams["batch_size"],
+                        "lr": hparams["lr"],
+                        "epochs": hparams["epochs"],
+                    }
+                )
                 logger.debug(f"Model params: {job['model_params']}")
                 model = build_model(
                     job["model_name"], job["model_params"], seed, n_features
                 )
-
                 # Training time
                 t0 = time.time()
-                model.fit(X_train, y_train)
+                model.fit(X_train, y_train_norm)
                 t1 = time.time()
                 train_time_all.append(t1 - t0)
 
                 # Inference time
                 t2 = time.time()
                 y_pred, epistemic, aleatoric, nll = model.predict_with_uncertainties(
-                    X_test, y_test
+                    X_test, y_test, y_mean, y_std
                 )
                 t3 = time.time()
                 inference_time_all.append(t3 - t2)

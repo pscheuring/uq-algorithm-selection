@@ -1,3 +1,5 @@
+"""Deep Evidential Regression model based on Amini et al. (2020)."""
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -44,18 +46,15 @@ class DeepEvidentialRegression(BaseModel):
         self,
         X_train: np.ndarray,
         y_train: np.ndarray,
-        clip_grad_norm: float | None = None,
     ) -> list[float]:
         """Train model by minimizing DER loss.
 
         Args:
-            X_train: Training inputs, shape (N, in_dim).
-            y_train: Training targets, shape (N,) or (N, D).
-            shuffle: Shuffle dataset each epoch.
-            clip_grad_norm: Optional gradient clipping value.
+            X_train (np.ndarray): Training inputs of shape (N, in_dim).
+            y_train (np.ndarray): Training targets of shape (N,) or (N, D).
 
         Returns:
-            List of average epoch losses.
+            list[float]: Average loss per epoch during training.
         """
         self.train()
         X_train = torch.as_tensor(X_train, dtype=torch.float32, device=self.device)
@@ -87,11 +86,8 @@ class DeepEvidentialRegression(BaseModel):
                 pred = self(batch_x)  # (B, 4*D)
                 loss = self.loss(batch_y, pred)
                 loss.backward()
-                if clip_grad_norm is not None:
-                    torch.nn.utils.clip_grad_norm_(
-                        self.parameters(), max_norm=clip_grad_norm
-                    )
                 optimizer.step()
+
                 epoch_loss += loss.item()
                 n_batches += 1
 
@@ -106,12 +102,31 @@ class DeepEvidentialRegression(BaseModel):
         self,
         X_test: np.ndarray,
         y_test: np.ndarray,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
-        """Evidential (NIG) Regression: mu (=gamma), epistemic, aleatoric, and Student-t NLL.
+        y_mean: np.ndarray | float,
+        y_std: np.ndarray | float,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Predicts mean, epistemic uncertainty, aleatoric uncertainty, and NIG-based NLL
+        for Deep Evidential Regression (Normal–Inverse-Gamma model).
+
+        The model outputs the NIG parameters (γ, v, α, β) for each target dimension.
+        These parameters define a Normal–Inverse-Gamma distribution over the target
+        mean and variance. From these, the predictive mean and uncertainty
+        components are computed and returned in the original target scale.
+
+        Args:
+            X_test (np.ndarray): Test inputs of shape (N, in_dim)
+            y_test (np.ndarray): Ground-truth targets in original scale, shape (N,) or (N, D).
+            y_mean (np.ndarray | float): Training target mean(s), shape (D,) or scalar.
+            y_std (np.ndarray | float): Training target standard deviation(s), shape (D,) or scalar.
 
         Returns:
-            mu (N,D), epistemic (N,D), aleatoric (N,D), nll (float, mean per point)
+            tuple:
+                - mu (np.ndarray): Predictive mean γ, shape (N, D).
+                - epistemic (np.ndarray): Epistemic uncertainty, shape (N, D), computed as β / (v * (α - 1)).
+                - aleatoric (np.ndarray): Aleatoric uncertainty, shape (N, D), computed as β / (α - 1).
+                - nll (np.ndarray): Student-t / NIG negative log-likelihood.
         """
+
         self.eval()
         device = next(self.parameters()).device
 
@@ -122,23 +137,25 @@ class DeepEvidentialRegression(BaseModel):
         if X_test.ndim == 1:
             X_test = X_test.unsqueeze(1)
 
-        pred = self(X_test)
-        gamma, v, alpha, beta = torch.chunk(pred, 4, dim=-1)
+        # Convert y_mean/y_std to tensors
+        y_mean = torch.as_tensor(y_mean, dtype=torch.float32, device=device).view(1, -1)
+        y_std = torch.as_tensor(y_std, dtype=torch.float32, device=device).view(1, -1)
 
-        # Amini et al. (2020)
-        aleatoric = beta / (alpha - 1.0)  # E[σ²]
+        pred = self(X_test)
+        gamma_norm, v, alpha, beta_norm = torch.chunk(pred, 4, dim=-1)
+
+        gamma = gamma_norm * y_std + y_mean  # (N, D)
+        beta = beta_norm * (y_std**2)  # (N, D)
+
+        aleatoric = beta / (alpha - 1.0)  # E[σ^2]
         epistemic = beta / (v * (alpha - 1.0))  # Var[μ]
 
-        # Meinert et al. (2023)
-        # aleatoric = beta * (v + 1) / v / alpha
-        # epistemic = 1.0 / v
-
-        nig_nll_tensor = _nig_nll(y_test, gamma, v, alpha, beta, reduce=True)
-        nig_nll = float(nig_nll_tensor.item())
+        # Normal-Inverse-Gamma negative log-likelihood
+        nig_nll = _nig_nll(y_test, gamma, v, alpha, beta, reduce=True)
 
         return (
             gamma.cpu().numpy(),
             epistemic.cpu().numpy(),
             aleatoric.cpu().numpy(),
-            nig_nll,
+            nig_nll.cpu().numpy(),
         )

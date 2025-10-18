@@ -1,3 +1,5 @@
+"""Bayes by Backprop model based on Blundell et al. (2015)."""
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -65,7 +67,17 @@ class BayesByBackprop(BaseModel):
         )
 
     def make_head(self, backbone_out_features: int, target_dim: int) -> nn.Module:
-        """Return variational head projecting to [mu, log_var]."""
+        """Builds the variational model head that outputs the mean and log-variance for each target dimension.
+
+        Args:
+            backbone_out_features (int): Number of features produced by the backbone network.
+            target_dim (int): Dimensionality of the output target (D).
+                The head predicts both mean and log-variance for each dimension.
+
+        Returns:
+            nn.Module: A VariationalDenseNormal head producing concatenated [mu, log_var]
+            of shape(..., 2 * D).
+        """
         return VariationalDenseNormal(
             in_features=backbone_out_features,
             target_dim=target_dim,
@@ -93,16 +105,15 @@ class BayesByBackprop(BaseModel):
         self,
         X_train: np.ndarray,
         y_train: np.ndarray,
-        clip_grad_norm: float | None = None,
     ) -> list[float]:
-        """Train model on (X_train, y_train) by minimizing ELBO.
+        """Trains the model on the given training data.
 
-        Shapes:
-            X_train: (N, input_dim)
-            y_train: (N,) or (N, D)
+        Args:
+            X_train (np.ndarray): Training inputs of shape (N, in_dim).
+            y_train (np.ndarray): Training targets of shape (N,) or (N, D).
 
         Returns:
-            List of average epoch losses.
+            list[float]: Average loss per epoch during training.
         """
         self.train()
         X_train = torch.as_tensor(X_train, dtype=torch.float32, device=self.device)
@@ -146,8 +157,6 @@ class BayesByBackprop(BaseModel):
                 pred = self(batch_x)
                 loss = self.loss(batch_y, pred, beta=beta)
                 loss.backward()
-                if clip_grad_norm is not None:
-                    torch.nn.utils.clip_grad_norm_(self.parameters(), clip_grad_norm)
                 optimizer.step()
 
                 epoch_loss += float(loss.item())
@@ -164,11 +173,27 @@ class BayesByBackprop(BaseModel):
         self,
         X_test: np.ndarray,
         y_test: np.ndarray,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
-        """Predict mean, epistemic, aleatoric variances and MC-based NLL.
+        y_mean: np.ndarray | float,
+        y_std: np.ndarray | float,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Predicts mean, epistemic uncertainty, aleatoric uncertainty, and MC-based NLL using Bayes by Backprop.
 
-        Runs multiple stochastic forward passes (MC sampling) to estimate
-        predictive mean and uncertainties.
+        Performs multiple stochastic forward passes by sampling weights from the learned
+        variational posterior (BBB). The predictive mean and uncertainties are computed
+        from these weight samples. All returned quantities are in the original target scale.
+
+        Args:
+            X_test (np.ndarray): Test inputs of shape (N, in_dim)
+            y_test (np.ndarray): Ground-truth targets of shape (N,) or (N, D), in original scale.
+            y_mean (np.ndarray | float): Training-set target mean, shape (D,) or scalar.
+            y_std (np.ndarray | float): Training-set target std, shape (D,) or scalar.
+
+        Returns:
+            tuple:
+                - mu (np.ndarray): Predictive mean, shape (N, D).
+                - epistemic (np.ndarray): Epistemic uncertainty (across BBB MC samples), shape (N, D).
+                - aleatoric (np.ndarray): Predicted aleatoric uncertainty, shape (N, D).
+                - nll (np.ndarray): MC mixture negative log-likelihood averaged over the batch.
         """
         self.eval()
         device = next(self.parameters()).device
@@ -179,6 +204,10 @@ class BayesByBackprop(BaseModel):
             y_test = y_test.unsqueeze(1)
         if X_test.ndim == 1:
             X_test = X_test.unsqueeze(1)
+
+        # Convert y_mean/y_std to tensors
+        y_mean = torch.as_tensor(y_mean, dtype=torch.float32, device=device).view(1, -1)
+        y_std = torch.as_tensor(y_std, dtype=torch.float32, device=device).view(1, -1)
 
         S = self.n_mc_samples
         mu_samples, var_samples = [], []
@@ -193,20 +222,26 @@ class BayesByBackprop(BaseModel):
         mu_stack = torch.stack(mu_samples, dim=0)  # (S, N, D)
         var_stack = torch.stack(var_samples, dim=0)  # (S, N, D)
 
-        # Aggregate statistics
-        mu_mean = mu_stack.mean(dim=0)  # (N, D)
-        epistemic = mu_stack.var(dim=0, unbiased=False)  # (N, D)
-        aleatoric = var_stack.mean(dim=0)  # (N, D)
+        # Denormalize all stochastic samples
+        mu_stack_real = mu_stack * y_std + y_mean
+        var_stack_real = var_stack * (y_std**2)
+
+        # Aggregate stochastic samples
+        mu_mean_real = mu_stack_real.mean(dim=0)  # (N, D)
+        epistemic_real = mu_stack_real.var(dim=0, unbiased=False)  # (N, D)
+        aleatoric_real = var_stack_real.mean(dim=0)  # (N, D)
 
         # MC-based NLL
-        mc_nll_t = gaussian_mixture_mc_nll(
-            y=y_test, mu_stack=mu_stack, var_stack=var_stack, reduce=True
+        mc_nll = gaussian_mixture_mc_nll(
+            y=y_test,
+            mu_stack=mu_stack_real,
+            var_stack=var_stack_real,
+            reduce=True,
         )
-        mc_nll = float(mc_nll_t.item())
 
         return (
-            mu_mean.cpu().numpy(),
-            epistemic.cpu().numpy(),
-            aleatoric.cpu().numpy(),
-            mc_nll,
+            mu_mean_real.cpu().numpy(),
+            epistemic_real.cpu().numpy(),
+            aleatoric_real.cpu().numpy(),
+            mc_nll.cpu().numpy(),
         )

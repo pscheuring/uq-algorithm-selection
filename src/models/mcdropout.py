@@ -1,3 +1,5 @@
+"""MC Dropout model based on Gal & Ghahramani (2016)."""
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -20,6 +22,8 @@ class MCDropout(BaseModel):
 
     def __init__(
         self,
+        length_scale: float,
+        tau: float,
         n_mc_samples: int,
         **kwargs,
     ) -> None:
@@ -33,6 +37,8 @@ class MCDropout(BaseModel):
             **kwargs: Forwarded to BaseModel (e.g. in_dim, hidden_dims, dropout_rate, etc.).
         """
         super().__init__(**kwargs)
+        self.length_scale = length_scale
+        self.tau = tau
         self.n_mc_samples = n_mc_samples
 
     def make_hidden_layer(self, in_features: int, hidden_features: int) -> nn.Module:
@@ -40,11 +46,32 @@ class MCDropout(BaseModel):
         return nn.Linear(in_features=in_features, out_features=hidden_features)
 
     def make_head(self, backbone_out_features: int, target_dim: int) -> nn.Module:
-        """Return probabilistic head projecting to [mu, log_var]."""
+        """Builds the model head that outputs the mean and log-variance for each target dimension.
+
+        Args:
+            backbone_out_features (int): Number of features produced by the backbone network.
+            target_dim (int): Dimensionality of the output target (D).
+                The head predicts both mean and log-variance for each dimension.
+
+        Returns:
+            nn.Module: A DenseNormal head producing concatenated [mu, log_var]
+            of shape(..., 2 * D).
+        """
         return DenseNormal(in_features=backbone_out_features, target_dim=target_dim)
 
     def loss(self, y_true: torch.Tensor, pred: torch.Tensor) -> torch.Tensor:
-        """Gaussian NLL with predicted mean and variance."""
+        """Computes the Gaussian negative log-likelihood (NLL) from predicted mean and log-variance.
+
+        The prediction tensor pred is expected to contain concatenated [mu, log_var]
+        along the last dimension.
+
+        Args:
+            y_true (torch.Tensor): Ground truth targets.
+            pred (torch.Tensor): Model predictions containing [mu, log_var].
+
+        Returns:
+            torch.Tensor: Scalar loss value representing the mean Gaussian NLL.
+        """
         mu, logvar = torch.chunk(pred, 2, dim=-1)
         var = torch.exp(logvar)
         return F.gaussian_nll_loss(mu, y_true, var, reduction="mean", eps=1e-6)
@@ -53,17 +80,15 @@ class MCDropout(BaseModel):
         self,
         X_train: np.ndarray,
         y_train: np.ndarray,
-        clip_grad_norm: float | None = None,
     ) -> list[float]:
-        """Train model on (X, y).
+        """Trains the model on the given training data.
 
         Args:
-            X_train: Training inputs, shape (N, in_dim).
-            y_train: Training targets, shape (N,) or (N, D).
-            clip_grad_norm: If set, clip gradient norm.
+            X_train (np.ndarray): Training inputs of shape (N, in_dim).
+            y_train (np.ndarray): Training targets of shape (N,) or (N, D).
 
         Returns:
-            List of average epoch losses.
+            list[float]: Average loss per epoch during training.
         """
         self.train()
         X_train = torch.as_tensor(X_train, dtype=torch.float32, device=self.device)
@@ -82,9 +107,15 @@ class MCDropout(BaseModel):
             shuffle=self.shuffle,
             generator=generator,
         )
-        optimizer = optim.Adam(self.parameters(), lr=self.lr)
+        N = len(X_train)
+        p = self.p_drop  # Dropout rate
+        l = self.length_scale  # prior length scale
+        tau = self.tau  # precision
+        weight_decay = l**2 * (1 - p) / (2.0 * N * tau)
 
-        losses: list[float] = []
+        optimizer = optim.Adam(self.parameters(), lr=self.lr, weight_decay=weight_decay)
+
+        losses = []
         for epoch in range(1, self.epochs + 1):
             epoch_loss = 0.0
             n_batches = 0
@@ -93,11 +124,8 @@ class MCDropout(BaseModel):
                 pred = self(batch_x)
                 loss = self.loss(batch_y, pred)
                 loss.backward()
-                if clip_grad_norm is not None:
-                    torch.nn.utils.clip_grad_norm_(
-                        self.parameters(), max_norm=clip_grad_norm
-                    )
                 optimizer.step()
+
                 epoch_loss += loss.item()
                 n_batches += 1
 
@@ -112,9 +140,30 @@ class MCDropout(BaseModel):
         self,
         X_test: np.ndarray,
         y_test: np.ndarray,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
-        """Predict mean, epistemic, aleatoric variances and MC-based NLL via MC Dropout."""
-        self.train()  # keep dropout active during MC sampling
+        y_mean: np.ndarray | float,
+        y_std: np.ndarray | float,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Predicts mean, epistemic uncertainty, and aleatoric uncertainty via MC Dropout,
+        and returns the MC mixture NLL. Dropout is kept active during sampling.
+
+        All outputs are in the original target scale (denormalized using y_mean/y_std).
+
+        Args:
+            X_test (np.ndarray): Test inputs of shape (N, in_dim)
+            y_test (np.ndarray): Ground-truth targets of shape (N,) or (N, D), in original scale.
+            y_mean (np.ndarray | float): Training-set target mean (D,) or scalar.
+            y_std (np.ndarray | float): Training-set target std (D,) or scalar.
+
+        Returns:
+            tuple:
+                - mu (np.ndarray): Predictive mean, shape (N, D).
+                - epistemic (np.ndarray): Epistemic uncertainty across MC samples, shape (N, D).
+                - aleatoric (np.ndarray): Predicted aleatoric uncertainty, shape (N, D).
+                - nll (np.ndarray): MC mixture negative log-likelihood (averaged over N and D).
+        """
+
+        self.train()  # Keep dropout active during MC sampling
         device = next(self.parameters()).device
 
         X_test = torch.as_tensor(X_test, dtype=torch.float32, device=device)
@@ -124,7 +173,11 @@ class MCDropout(BaseModel):
         if X_test.ndim == 1:
             X_test = X_test.unsqueeze(1)
 
-        S = int(self.n_mc_samples)
+        # Convert y_mean/y_std to tensors
+        y_mean = torch.as_tensor(y_mean, dtype=torch.float32, device=device).view(1, -1)
+        y_std = torch.as_tensor(y_std, dtype=torch.float32, device=device).view(1, -1)
+
+        S = self.n_mc_samples
         mu_samples, var_samples = [], []
 
         # MC sampling
@@ -137,20 +190,26 @@ class MCDropout(BaseModel):
         mu_stack = torch.stack(mu_samples, dim=0)  # (S, N, D)
         var_stack = torch.stack(var_samples, dim=0)  # (S, N, D)
 
-        # Aggregate statistics
-        mu_mean = mu_stack.mean(dim=0)  # (N, D)
-        epistemic = mu_stack.var(dim=0, unbiased=False)  # (N, D)
-        aleatoric = var_stack.mean(dim=0)  # (N, D)
+        # Denormalize all stochastic samples
+        mu_stack_real = mu_stack * y_std + y_mean
+        var_stack_real = var_stack * (y_std**2)
+
+        # Aggregate stochastic samples
+        mu_mean_real = mu_stack_real.mean(dim=0)  # (N, D)
+        epistemic_real = mu_stack_real.var(dim=0, unbiased=False)  # (N, D)
+        aleatoric_real = var_stack_real.mean(dim=0)  # (N, D)
 
         # MC-based NLL
-        nll_tensor = gaussian_mixture_mc_nll(
-            y=y_test, mu_stack=mu_stack, var_stack=var_stack, reduce=True
+        mc_nll = gaussian_mixture_mc_nll(
+            y=y_test,
+            mu_stack=mu_stack_real,
+            var_stack=var_stack_real,
+            reduce=True,
         )
-        nll = float(nll_tensor.item())
 
         return (
-            mu_mean.cpu().numpy(),
-            epistemic.cpu().numpy(),
-            aleatoric.cpu().numpy(),
-            nll,
+            mu_mean_real.cpu().numpy(),
+            epistemic_real.cpu().numpy(),
+            aleatoric_real.cpu().numpy(),
+            mc_nll.cpu().numpy(),
         )

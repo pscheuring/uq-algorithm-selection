@@ -1,4 +1,4 @@
-import math
+"""Deep Ensemble model based on Lakshminarayanan et al. (2017)."""
 
 import numpy as np
 import torch
@@ -28,26 +28,20 @@ class DeepEnsembleMember(BaseModel):
         super().__init__(**kwargs)
 
     def make_hidden_layer(self, in_features: int, hidden_features: int) -> nn.Module:
-        """Standard linear hidden layer.
-
-        Args:
-            in_features: Number of input features to the layer.
-            hidden_features: Number of output features (hidden units).
-
-        Returns:
-            A plain nn.Linear layer (no variational components).
-        """
+        """Return plain linear hidden layer."""
         return nn.Linear(in_features=in_features, out_features=hidden_features)
 
     def make_head(self, backbone_out_features: int, target_dim: int) -> nn.Module:
-        """Head that outputs [mu, log_var] for each target dim.
+        """Builds the model head that outputs the mean and log-variance for each target dimension.
 
         Args:
-            backbone_out_features: Number of features from the backbone.
-            target_dim: Output target dimensionality D.
+            backbone_out_features (int): Number of features produced by the backbone network.
+            target_dim (int): Dimensionality of the output target (D).
+                The head predicts both mean and log-variance for each dimension.
 
         Returns:
-            A DenseNormal head producing concatenated [mu, log_var] (shape (..., 2*D)).
+            nn.Module: A DenseNormal head producing concatenated [mu, log_var]
+            of shape(..., 2 * D).
         """
         return DenseNormal(
             in_features=backbone_out_features,
@@ -55,14 +49,17 @@ class DeepEnsembleMember(BaseModel):
         )
 
     def loss(self, y_true: torch.Tensor, head_out: torch.Tensor) -> torch.Tensor:
-        """Gaussian negative log-likelihood with predicted mean/variance.
+        """Computes the Gaussian negative log-likelihood (NLL) from predicted mean and log-variance.
+
+        The prediction tensor pred is expected to contain concatenated [mu, log_var]
+        along the last dimension.
 
         Args:
-            y_true: Ground-truth targets, shape (B, D).
-            head_out: Head outputs, concatenated [mu, log_var], shape (B, 2*D).
+            y_true (torch.Tensor): Ground truth targets.
+            pred (torch.Tensor): Model predictions containing [mu, log_var].
 
         Returns:
-            Scalar loss (mean NLL over batch).
+            torch.Tensor: Scalar loss value representing the mean Gaussian NLL.
         """
         mu, logvar = torch.chunk(head_out, 2, dim=-1)
         var = torch.exp(logvar)
@@ -73,20 +70,17 @@ class DeepEnsembleMember(BaseModel):
         X_train: np.ndarray,
         y_train: np.ndarray,
         member_seed: int,
-        clip_grad_norm: float | None = None,
     ) -> dict[str, list[float]]:
-        """Train this ensemble member by minimizing Gaussian NLL.
+        """Trains a single ensemble member by minimizing the Gaussian NLL.
 
         Args:
-            X_train: Training inputs, shape (N, in_dim) or (N,) for 1D inputs.
-            y_train: Training targets, shape (N,) or (N, D).
-            clip_grad_norm: If set, clip gradient norm to this value.
-            member_seed: RNG seed used for shuffling batches.
+            X_train (np.ndarray): Training inputs of shape (N, in_dim).
+            y_train (np.ndarray): Training targets of shape (N,) or (N, D).
+            member_seed (int): Random seed used to initialize the data shuffling and dropout.
 
         Returns:
-            Dict with key `"losses"` containing the average loss per epoch.
+            list[float]: Average loss per epoch during training.
         """
-
         self.train()
         X_train = torch.as_tensor(X_train, dtype=torch.float32, device=self.device)
         y_train = torch.as_tensor(y_train, dtype=torch.float32, device=self.device)
@@ -108,7 +102,7 @@ class DeepEnsembleMember(BaseModel):
             self.parameters(), lr=self.lr, weight_decay=self.weight_decay
         )
 
-        losses: list[float] = []
+        losses = []
         for epoch in range(1, self.epochs + 1):
             epoch_loss = 0.0
             n_batches = 0
@@ -117,10 +111,6 @@ class DeepEnsembleMember(BaseModel):
                 pred = self(batch_x)  # (B, 2*D)
                 loss = self.loss(batch_y, pred)
                 loss.backward()
-                if clip_grad_norm is not None:
-                    torch.nn.utils.clip_grad_norm_(
-                        self.parameters(), max_norm=clip_grad_norm
-                    )
                 optimizer.step()
                 epoch_loss += loss.item()
                 n_batches += 1
@@ -129,12 +119,12 @@ class DeepEnsembleMember(BaseModel):
             losses.append(avg)
             logger.info(f"[Member] Epoch {epoch:3d}/{self.epochs}  loss={avg:.6f}")
 
-        return {"losses": losses}
+        return losses
 
     @torch.no_grad()
     def predict_with_uncertainties_member(
         self, X_test: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Predict mean and variance for one member.
 
         Args:
@@ -145,11 +135,9 @@ class DeepEnsembleMember(BaseModel):
         """
         self.eval()
         X_test = torch.as_tensor(X_test, dtype=torch.float32, device=self.device)
-        out = self(X_test)  # (N, 2*D)
+        out = self(X_test)
         mu, logvar = torch.chunk(out, 2, dim=-1)
         var = torch.exp(logvar)
-        mu = mu.cpu().numpy()
-        var = var.cpu().numpy()
         return mu, var
 
 
@@ -173,7 +161,7 @@ class DeepEnsemble:
 
         for m_idx in range(n_members):
             logger.debug(f"[DeepEnsemble] Creating member {m_idx + 1}/{n_members}")
-            member = DeepEnsembleMember(**kwargs, seed=self.seed)
+            member = DeepEnsembleMember(**kwargs, seed=self.seed + m_idx)
             self.members.append(member)
 
             # Quick sanity check to confirm initialization differs across members.
@@ -184,17 +172,15 @@ class DeepEnsemble:
         self,
         X_train: np.ndarray,
         y_train: np.ndarray,
-        clip_grad_norm: float | None = None,
-    ) -> list[dict[str, list[float]]]:
+    ) -> list[float]:
         """Train all ensemble members independently.
 
         Args:
-            X_train: Training inputs, shape (N, in_dim) or (N,) for 1D inputs.
+            X_train: Training inputs, shape (N, in_dim).
             y_train: Training targets, shape (N,) or (N, D).
-            clip_grad_norm: Optional gradient clipping value.
 
         Returns:
-            List of dicts with training losses per member, each having key "losses".
+            list[float]: Average loss per epoch during training
         """
         losses: list[dict[str, list[float]]] = []
         for m_idx, member in enumerate(self.members):
@@ -202,10 +188,9 @@ class DeepEnsemble:
             logger.info(
                 f"\n=== Train member {m_idx + 1}/{len(self.members)} (seed={member_seed}) ==="
             )
-            loss = member.fit(
+            loss = member.fit_member(
                 X_train,
                 y_train,
-                clip_grad_norm=clip_grad_norm,
                 member_seed=member_seed,
             )
             losses.append(loss)
@@ -216,6 +201,8 @@ class DeepEnsemble:
         self,
         X_test: np.ndarray,
         y_test: np.ndarray,
+        y_mean: np.ndarray | float,
+        y_std: np.ndarray | float,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
         """Aggregate predictions across ensemble members and compute NLL over all members.
 
@@ -230,7 +217,7 @@ class DeepEnsemble:
                 - aleatoric (np.ndarray): Aleatoric variance, shape (N, D)
                 - nll (float): Negative log-likelihood over all members
         """
-        device = next(self.parameters()).device
+        device = self.members[0].device
 
         X_test = torch.as_tensor(X_test, dtype=torch.float32, device=device)
         y_test = torch.as_tensor(y_test, dtype=torch.float32, device=device)
@@ -239,9 +226,13 @@ class DeepEnsemble:
         if X_test.ndim == 1:
             X_test = X_test.unsqueeze(1)
 
+        # Convert y_mean/y_std to tensors
+        y_mean = torch.as_tensor(y_mean, dtype=torch.float32, device=device).view(1, -1)
+        y_std = torch.as_tensor(y_std, dtype=torch.float32, device=device).view(1, -1)
+
         mu_samples, var_samples = [], []
 
-        # Aample over ensemble members
+        # Sample over ensemble members
         for member in self.members:
             mu, var = member.predict_with_uncertainties_member(X_test)
             mu_samples.append(mu)  # (N, D)
@@ -250,19 +241,26 @@ class DeepEnsemble:
         mu_stack = torch.stack(mu_samples, dim=0)  # (S, N, D)
         var_stack = torch.stack(var_samples, dim=0)  # (S, N, D)
 
-        # Aggregate statistics
-        mu_mean = mu_stack.mean(axis=0)  # (N, D)
-        epistemic = mu_stack.var(axis=0, ddof=0)  # (N, D)
-        aleatoric = var_stack.mean(axis=0)  # (N, D)
+        # Denormalize all stochastic samples
+        mu_stack_real = mu_stack * y_std + y_mean
+        var_stack_real = var_stack * (y_std**2)
 
-        nll_tensor = gaussian_mixture_mc_nll(
-            y=y_test, mu_stack=mu_stack, var_stack=var_stack, reduce=True
+        # Aggregate stochastic samples
+        mu_mean_real = mu_stack_real.mean(dim=0)  # (N, D)
+        epistemic_real = mu_stack_real.var(dim=0, unbiased=False)  # (N, D)
+        aleatoric_real = var_stack_real.mean(dim=0)  # (N, D)
+
+        # MC-based NLL
+        mc_nll = gaussian_mixture_mc_nll(
+            y=y_test,
+            mu_stack=mu_stack_real,
+            var_stack=var_stack_real,
+            reduce=True,
         )
-        nll = float(nll_tensor.item())
 
         return (
-            mu_mean.cpu().numpy(),
-            epistemic.cpu().numpy(),
-            aleatoric.cpu().numpy(),
-            nll,
+            mu_mean_real.cpu().numpy(),
+            epistemic_real.cpu().numpy(),
+            aleatoric_real.cpu().numpy(),
+            mc_nll.cpu().numpy(),
         )
