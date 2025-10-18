@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.distributions as dist
 
 
 class DenseNormal(nn.Module):
@@ -28,7 +27,7 @@ class DenseNormal(nn.Module):
 
 
 class DenseNormalGamma(nn.Module):
-    """Evidential Regression head (Amini et al.): outputs mu, v>0, alpha>1, beta>0."""
+    """Evidential Regression head (Amini et al. 2020): outputs mu, v>0, alpha>1, beta>0."""
 
     def __init__(self, in_features: int, target_dim: int, eps: float = 1e-6) -> None:
         super().__init__()
@@ -59,11 +58,13 @@ class DenseNormalGamma(nn.Module):
 
 
 class VariationalDense(nn.Module):
-    """Bayes-by-Backprop linear layer with diagonal Gaussian posterior.
+    """Bayes-by-Backprop linear layer with a diagonal Gaussian posterior.
 
     Posterior: w ~ N(mu, sigma^2), with sigma = softplus(rho).
-    Prior: Gaussian N(mu_0, sigma_0^2), with sigma_0 = softplus(rho_0).
-    Stores KL from the last forward pass for retrieval via kl_loss().
+    Prior:     w ~ N(mu_0, sigma_0^2), with sigma_0 = softplus(rho_0) or a fixed value.
+
+    The KL divergence KL(q(w) || p(w)) can be computed in closed form via kl_loss()
+    (summed over weights and biases). No state is stored during the forward pass.
     """
 
     def __init__(
@@ -98,14 +99,11 @@ class VariationalDense(nn.Module):
 
         self._kl: torch.Tensor | None = None  # set on forward()
 
-    def _sample(
-        self, mu: torch.Tensor, rho: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Reparameterized sample: returns (w, mu, sigma)."""
-        sigma = F.softplus(rho)
+    def _sample(self, mu: torch.Tensor, rho: torch.Tensor) -> torch.Tensor:
+        """Reparameterized sample w = mu + softplus(rho) * eps."""
+        sigma = F.softplus(rho)  # + 1e-8 optional
         eps = torch.randn_like(mu)
-        w = mu + sigma * eps
-        return w
+        return mu + sigma * eps
 
     @staticmethod
     def _kl_normal_closed(
@@ -114,9 +112,7 @@ class VariationalDense(nn.Module):
         mu_p: torch.Tensor,
         sigma_p: torch.Tensor,
     ) -> torch.Tensor:
-        """
-        Closed form KL(q(w) || p(w)) elementwise
-        """
+        """Closed form KL(q(w) || p(w)) elementwise"""
         return (
             torch.log(sigma_p / sigma_q)
             + (sigma_q.square() + (mu - mu_p).square()) / (2.0 * sigma_p.square())
@@ -134,12 +130,16 @@ class VariationalDense(nn.Module):
         """
         # Weight
         w = self._sample(self.weight_mu, self.weight_rho)
-        # Biase
+        # Bias
         b = self._sample(self.bias_mu, self.bias_rho)
         return F.linear(x, w, b)
 
     def kl_loss(self) -> torch.Tensor:
-        """Closed form KL q(w)||p(w)"""
+        """Closed-form KL divergence KL(q(w)||p(w)) summed over weights and biases.
+
+        Returns:
+            torch.Tensor: Scalar KL (sum over all parameters).
+        """
         device = self.weight_mu.device
         mu_p = self.prior_mean.to(device)
         sig_p = self.prior_sigma.to(device)

@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 
 
-def create_activations(activation: list[str]) -> list[nn.Module]:
+def create_activations(activation: Iterable[str]) -> list[nn.Module]:
     """Create activation modules from a list of activation names.
 
     Args:
@@ -44,11 +44,9 @@ class BaseModel(ABC, nn.Module):
         - make_hidden_layer: how to construct a single hidden layer,
         - make_head: how to construct the output head,
         - loss: model-specific training loss,
-        - fit: the training loop,
-        - predict_with_uncertainties: inference with uncertainty decomposition.
 
     Architecture:
-        Input → [Dropout → Linear → Activation] × n → Head → Output
+        Input → [Linear → Activation → (optional) Dropout] × n → Head → Output
     """
 
     def __init__(
@@ -63,7 +61,7 @@ class BaseModel(ABC, nn.Module):
         shuffle: bool,
         target_dim: int,
         seed: int,
-        p_drop: float = 0.0,
+        p_drop: float,
         device: str | None = None,
     ) -> None:
         """Initialize the base model.
@@ -108,14 +106,14 @@ class BaseModel(ABC, nn.Module):
         layers: list[nn.Module] = []
         current_in_features = self.in_features
         for activation, h in zip(self.activations, self.hidden_features):
-            if self.p_drop > 0.0:
-                layers.append(nn.Dropout(self.p_drop))
             layers.append(self.make_hidden_layer(current_in_features, h))
             layers.append(activation)
+            if self.p_drop > 0.0:
+                layers.append(nn.Dropout(self.p_drop))
             current_in_features = h
 
-        self.backbone: nn.Sequential = nn.Sequential(*layers)
-        self.backbone_out_features: int = current_in_features
+        self.backbone = nn.Sequential(*layers)
+        self.backbone_out_features = current_in_features
 
         # Construct model head
         self.head: nn.Module = self.make_head(
@@ -147,7 +145,8 @@ class BaseModel(ABC, nn.Module):
             target_dim: Desired dimensionality of the model’s output.
 
         Returns:
-            Module mapping backbone_out_features → target_dim.
+            nn.Module: Head producing model-specific outputs parameterized by target_dim
+            (e.g., D, 2*D, 4*D depending on the head).
         """
         raise NotImplementedError
 
@@ -171,6 +170,7 @@ class BaseModel(ABC, nn.Module):
             x: Input tensor, shape (B, in_features).
 
         Returns:
-            Output tensor, shape (B, target_dim).
+            torch.Tensor: Output of the head with shape (B, K), where K depends on the head
+            (e.g., D, 2*D, 4*D).
         """
         return self.head(self.backbone(x))

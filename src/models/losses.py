@@ -7,17 +7,18 @@ def elbo_loss(y, head_out, kl_value, N: int, beta: float) -> torch.Tensor:
     """Evidence Lower Bound (ELBO) loss.
 
     Computes:
-        mean Gaussian NLL + (beta * KL) / N
+        mean Gaussian NLL  +  beta * (B / N) * KL
 
     Args:
-        y: Targets, shape (N, D).
-        head_out: Model outputs [mu, log_var], shape (N, 2*D).
-        kl_value: KL divergence term from variational layers.
-        N: Dataset size, for scaling KL.
-        beta: KL weight.
+        y (torch.Tensor): Targets, shape (B, D).
+        head_out (torch.Tensor): Model outputs [mu, log_var], shape (B, 2*D).
+        kl_value (torch.Tensor | float): KL term from variational layers (per step).
+            The factor (B/N) scales the global KL to per-datapoint magnitude.
+        N (int): Total dataset size (for KL scaling).
+        beta (float): KL weight.
 
     Returns:
-        Scalar loss tensor.
+        torch.Tensor: Scalar loss.
     """
     mu, logvar = torch.chunk(head_out, 2, dim=-1)
     var = torch.exp(logvar).clamp_min(1e-6)
@@ -37,7 +38,7 @@ def _nig_nll(
     beta: torch.Tensor,
     reduce: bool = True,
 ) -> torch.Tensor:
-    """Negative log-likelihood of Student-t marginal Amini et al. (2020)."""
+    """Negative log-likelihood of Student-t marginal as in Amini et al. (2020)."""
     twoBlambda = 2.0 * beta * (1.0 + v)
     nll = (
         0.5 * torch.log(torch.tensor(math.pi, dtype=y.dtype, device=y.device) / v)
@@ -59,7 +60,10 @@ def _kl_nig(
     a2: torch.Tensor,
     b2: torch.Tensor,
 ) -> torch.Tensor:
-    """KL divergence between two Normal-Inverse-Gamma distributions."""
+    """KL divergence between two Normal–Inverse-Gamma distributions.
+
+    All inputs should satisfy v>0, alpha>1, beta>0 for numerical stability.
+    """
     KL = (
         0.5 * (a1 - 1.0) / b1 * (v2 * (mu2 - mu1).pow(2))
         + 0.5 * v2 / v1
@@ -83,9 +87,14 @@ def _nig_reg(
     reduce: bool = True,
     kl: bool = False,
 ) -> torch.Tensor:
-    """Evidential regularization term Amini et al., 2020.
+    """Evidential regularization term (Amini et al., 2020).
 
-    Can use simple evidence penalty (default) or KL-based version.
+    If kl=False: uses evidence penalty proportional to |y - gamma| * (2v + alpha).
+    If kl=True:  multiplies |y - gamma| by the KL between NIG(γ,v,α,β) and a reference
+                 NIG(γ, ω, 1+ω, β), where ω>0 controls the strength.
+
+    Returns:
+        torch.Tensor: Scalar (mean) if reduce=True, else elementwise (N, D).
     """
     error = (y - gamma).abs()
 
@@ -125,29 +134,40 @@ def der_loss(
 def gaussian_mixture_mc_nll(
     y: torch.Tensor,  # (N, D)
     mu_stack: torch.Tensor,  # (S, N, D)
-    var_stack: torch.Tensor,  # (S, N, D)  variance, not std
-    reduce: bool = True,
+    var_stack: torch.Tensor,  # (S, N, D)
+    reduce: bool = True,  # True -> mean over N, return shape (D,)
 ) -> torch.Tensor:
-    eps = 1e-8
-    var_stack = var_stack.clamp_min(eps)  # (S,N,D)
+    """MC Gaussian mixture negative NLL computed separately for each output dimension.
 
-    # F.gaussian_nll_loss returns elementwise NLL when reduction='none'
-    # full=True to include the +0.5*log(2*pi) term so it's exactly -log p
+    Args:
+        y: Ground-truth targets, shape (N, D)
+        mu_stack: Predicted means from S samples, shape (S, N, D)
+        var_stack: Predicted variances from S samples, shape (S, N, D)
+        reduce: If True, returns mean NLL per dimension (shape (D,))
+                If False, returns per-sample NLLs (shape (N, D))
+
+    Returns:
+        torch.Tensor: NLL per dimension (D,) or per sample and dimension (N, D)
+    """
+    eps = 1e-8
+    S = mu_stack.shape[0]
+    var_stack = var_stack.clamp_min(eps)
+
+    # Compute elementwise Gaussian NLL: shape (S, N, D)
     nll_elems = F.gaussian_nll_loss(
-        mu_stack,  # input/mean: (S,N,D)
-        y.unsqueeze(0),  # target:     (S,N,D)
-        var_stack,  # var:        (S,N,D)
+        mu_stack,
+        y.unsqueeze(0),
+        var_stack,
         full=True,
         reduction="none",
-    )  # -> (S,N,D)
+    )
 
-    # Convert to log-prob and sum over target dims
-    logps_sumD = (-nll_elems).sum(dim=-1)  # (S,N)
+    # Combine over S (MC mixture): log( (1/S) * Σ exp(log p_s) )
+    logp_mix = torch.logsumexp(-nll_elems, dim=0) - math.log(S)  # (N, D)
+    nll_per_point_dim = -logp_mix  # (N, D)
 
-    # log( (1/S) * sum_s exp(log p_s) )
-    mc_loglik_per_point = torch.logsumexp(logps_sumD, dim=0) - math.log(
-        mu_stack.shape[0]
-    )  # (N,)
-
-    nll_per_point = -mc_loglik_per_point
-    return nll_per_point.mean() if reduce else nll_per_point
+    # Optionally average over samples (N)
+    if reduce:
+        return nll_per_point_dim.mean(dim=0)  # (D,)
+    else:
+        return nll_per_point_dim  # (N, D)
