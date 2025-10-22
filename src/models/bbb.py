@@ -5,9 +5,10 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
+from src.evaluation import gaussian_mixture_mc_nll, kuleshov_calibration_score_mc
 from src.models.base_model import BaseModel
 from src.models.layers import VariationalDense, VariationalDenseNormal
-from src.models.losses import elbo_loss, gaussian_mixture_mc_nll
+from src.models.losses import elbo_loss
 from src.utils.utils_logging import logger
 
 
@@ -175,6 +176,7 @@ class BayesByBackprop(BaseModel):
         y_test: np.ndarray,
         y_mean: np.ndarray | float,
         y_std: np.ndarray | float,
+        test_interval: list[float, float],
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Predicts mean, epistemic uncertainty, aleatoric uncertainty, and MC-based NLL using Bayes by Backprop.
 
@@ -182,18 +184,25 @@ class BayesByBackprop(BaseModel):
         variational posterior (BBB). The predictive mean and uncertainties are computed
         from these weight samples. All returned quantities are in the original target scale.
 
+        The NLL is computed only for rows of X_test whose input values lie inside the interval
+        [lo, hi] specified by test_interval. Predictions (mu, epistemic, aleatoric) are returned
+        for all test samples.
+
         Args:
             X_test (np.ndarray): Test inputs of shape (N, in_dim)
             y_test (np.ndarray): Ground-truth targets of shape (N,) or (N, D), in original scale.
             y_mean (np.ndarray | float): Training-set target mean, shape (D,) or scalar.
             y_std (np.ndarray | float): Training-set target std, shape (D,) or scalar.
+            test_interval (list[float, float]): Interval [lo, hi]; used to select test samples
+                included in the NLL computation.
 
         Returns:
             tuple:
-                - mu (np.ndarray): Predictive mean, shape (N, D).
-                - epistemic (np.ndarray): Epistemic uncertainty (across BBB MC samples), shape (N, D).
-                - aleatoric (np.ndarray): Predicted aleatoric uncertainty, shape (N, D).
-                - nll (np.ndarray): MC mixture negative log-likelihood averaged over the batch.
+                - mu (np.ndarray): Predictive mean, shape (N, D)
+                - epistemic (np.ndarray): Epistemic uncertainty (across BBB MC samples), shape (N, D)
+                - aleatoric (np.ndarray): Predicted aleatoric uncertainty, shape (N, D)
+                - nll (np.ndarray): MC mixture negative log-likelihood averaged over test samples inside [lo, hi]
+                - cal_score (np.ndarray): Calibration score as defined in (Kuleshov et al., 2018)
         """
         self.eval()
         device = next(self.parameters()).device
@@ -231,12 +240,24 @@ class BayesByBackprop(BaseModel):
         epistemic_real = mu_stack_real.var(dim=0, unbiased=False)  # (N, D)
         aleatoric_real = var_stack_real.mean(dim=0)  # (N, D)
 
-        # MC-based NLL
+        # Build interval mask: keep rows with all features within [lo, hi]
+        lo, hi = map(float, test_interval)
+        if X_test.ndim == 1:
+            X_mask = (X_test >= lo) & (X_test <= hi)
+        else:
+            X_mask = ((X_test >= lo) & (X_test <= hi)).all(dim=1)  # (N,)
+
+        # MC-based NLL (only over rows inside the interval)
         mc_nll = gaussian_mixture_mc_nll(
-            y=y_test,
-            mu_stack=mu_stack_real,
-            var_stack=var_stack_real,
-            reduce=True,
+            y=y_test[X_mask],
+            mu_stack=mu_stack_real[:, X_mask],
+            var_stack=var_stack_real[:, X_mask],
+        )
+
+        cal_score = kuleshov_calibration_score_mc(
+            y=y_test[X_mask],
+            mu_stack=mu_stack_real[:, X_mask],
+            var_stack=var_stack_real[:, X_mask],
         )
 
         return (
@@ -244,4 +265,5 @@ class BayesByBackprop(BaseModel):
             epistemic_real.cpu().numpy(),
             aleatoric_real.cpu().numpy(),
             mc_nll.cpu().numpy(),
+            cal_score.cpu().numpy(),
         )

@@ -6,6 +6,7 @@ import torch.nn as nn
 import torch.optim as optim
 
 from src.models.base_model import BaseModel
+from src.evaluation import kuleshov_calibration_score_der
 from src.models.layers import DenseNormalGamma
 from src.models.losses import _nig_nll, der_loss
 from src.utils.utils_logging import logger
@@ -104,6 +105,7 @@ class DeepEvidentialRegression(BaseModel):
         y_test: np.ndarray,
         y_mean: np.ndarray | float,
         y_std: np.ndarray | float,
+        test_interval: list[float, float],
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Predicts mean, epistemic uncertainty, aleatoric uncertainty, and NIG-based NLL
         for Deep Evidential Regression (Normal–Inverse-Gamma model).
@@ -113,20 +115,26 @@ class DeepEvidentialRegression(BaseModel):
         mean and variance. From these, the predictive mean and uncertainty
         components are computed and returned in the original target scale.
 
+        The NLL is computed only over rows of X_test whose inputs lie inside
+        the interval [lo, hi] specified by test_interval. Predictions
+        (mu, epistemic, aleatoric) are returned for all test samples.
+
         Args:
             X_test (np.ndarray): Test inputs of shape (N, in_dim)
             y_test (np.ndarray): Ground-truth targets in original scale, shape (N,) or (N, D).
             y_mean (np.ndarray | float): Training target mean(s), shape (D,) or scalar.
             y_std (np.ndarray | float): Training target standard deviation(s), shape (D,) or scalar.
+            test_interval (list[float, float]): Interval [lo, hi]; used to select test samples
+                included in the NLL computation.
 
         Returns:
             tuple:
-                - mu (np.ndarray): Predictive mean γ, shape (N, D).
-                - epistemic (np.ndarray): Epistemic uncertainty, shape (N, D), computed as β / (v * (α - 1)).
-                - aleatoric (np.ndarray): Aleatoric uncertainty, shape (N, D), computed as β / (α - 1).
-                - nll (np.ndarray): Student-t / NIG negative log-likelihood.
+                - mu (np.ndarray): Predictive mean γ, shape (N, D)
+                - epistemic (np.ndarray): Epistemic uncertainty, shape (N, D), computed as β / (v * (α - 1))
+                - aleatoric (np.ndarray): Aleatoric uncertainty, shape (N, D), computed as β / (α - 1)
+                - nll (np.ndarray): Student-t / NIG negative log-likelihood (computed only for [lo, hi])
+                - cal_score (np.ndarray): Calibration score as defined in (Kuleshov et al., 2018)
         """
-
         self.eval()
         device = next(self.parameters()).device
 
@@ -150,12 +158,35 @@ class DeepEvidentialRegression(BaseModel):
         aleatoric = beta / (alpha - 1.0)  # E[σ^2]
         epistemic = beta / (v * (alpha - 1.0))  # Var[μ]
 
-        # Normal-Inverse-Gamma negative log-likelihood
-        nig_nll = _nig_nll(y_test, gamma, v, alpha, beta, reduce=True)
+        # Build interval mask: keep rows with all features within [lo, hi]
+        lo, hi = map(float, test_interval)
+        if X_test.ndim == 1:
+            X_mask = (X_test >= lo) & (X_test <= hi)
+        else:
+            X_mask = ((X_test >= lo) & (X_test <= hi)).all(dim=1)  # (N,)
+
+        # Normal-Inverse-Gamma negative log-likelihood (only inside [lo, hi])
+        nig_nll = _nig_nll(
+            y_test[X_mask],
+            gamma[X_mask],
+            v[X_mask],
+            alpha[X_mask],
+            beta[X_mask],
+            reduce=True,
+        )
+
+        cal_score = kuleshov_calibration_score_der(
+            y_test[X_mask],
+            gamma[X_mask],
+            v[X_mask],
+            alpha[X_mask],
+            beta[X_mask],
+        )
 
         return (
             gamma.cpu().numpy(),
             epistemic.cpu().numpy(),
             aleatoric.cpu().numpy(),
             nig_nll.cpu().numpy(),
+            cal_score.cpu().numpy(),
         )

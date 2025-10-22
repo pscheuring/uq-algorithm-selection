@@ -6,9 +6,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
+from src.evaluation import gaussian_mixture_mc_nll, kuleshov_calibration_score_mc
 from src.models.base_model import BaseModel
 from src.models.layers import DenseNormal
-from src.models.losses import gaussian_mixture_mc_nll
 from src.utils.utils_logging import logger
 
 
@@ -172,7 +172,7 @@ class DeepEnsemble:
         self,
         X_train: np.ndarray,
         y_train: np.ndarray,
-    ) -> list[float]:
+    ) -> np.ndarray:
         """Train all ensemble members independently.
 
         Args:
@@ -180,21 +180,19 @@ class DeepEnsemble:
             y_train: Training targets, shape (N,) or (N, D).
 
         Returns:
-            list[float]: Average loss per epoch during training
+            np.ndarray: member_losses, shape (n_members, epochs)
         """
-        losses: list[dict[str, list[float]]] = []
+        member_losses = []
         for m_idx, member in enumerate(self.members):
             member_seed = self.seed + m_idx
             logger.info(
                 f"\n=== Train member {m_idx + 1}/{len(self.members)} (seed={member_seed}) ==="
             )
-            loss = member.fit_member(
-                X_train,
-                y_train,
-                member_seed=member_seed,
-            )
-            losses.append(loss)
-        return losses
+            losses = member.fit_member(
+                X_train, y_train, member_seed=member_seed
+            )  # list[float], len=epochs
+            member_losses.append(np.asarray(losses, dtype=float))
+        return np.stack(member_losses, axis=0)  # shape (n_members, epochs)
 
     @torch.no_grad()
     def predict_with_uncertainties(
@@ -203,19 +201,28 @@ class DeepEnsemble:
         y_test: np.ndarray,
         y_mean: np.ndarray | float,
         y_std: np.ndarray | float,
+        test_interval: list[float, float],
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
-        """Aggregate predictions across ensemble members and compute NLL over all members.
+        """Aggregate predictions across ensemble members and compute NLL over interval-only samples.
+
+        If test_interval = [lo, hi] is provided, the NLL is computed only over rows of X_test
+        whose inputs lie inside [lo, hi] (applied per feature). Predictions (mu, epistemic, aleatoric)
+        are returned for all test samples.
 
         Args:
             X_test (np.ndarray): Test inputs, shape (N, in_dim).
             y_test (np.ndarray): Ground-truth targets, shape (N,) or (N, D).
+            y_mean (np.ndarray | float): Training-set target mean (D,) or scalar.
+            y_std (np.ndarray | float): Training-set target std (D,) or scalar.
+            test_interval (list[float, float]): [lo, hi] interval used to select rows included in NLL.
 
         Returns:
             Tuple:
                 - mu_mean (np.ndarray): Predictive mean, shape (N, D)
                 - epistemic (np.ndarray): Epistemic variance, shape (N, D)
                 - aleatoric (np.ndarray): Aleatoric variance, shape (N, D)
-                - nll (float): Negative log-likelihood over all members
+                - nll (float): Negative log-likelihood over rows inside [lo, hi]
+                - cal_score (np.ndarray): Calibration score as defined in (Kuleshov et al., 2018)
         """
         device = self.members[0].device
 
@@ -250,12 +257,24 @@ class DeepEnsemble:
         epistemic_real = mu_stack_real.var(dim=0, unbiased=False)  # (N, D)
         aleatoric_real = var_stack_real.mean(dim=0)  # (N, D)
 
-        # MC-based NLL
+        # Build interval mask: keep rows with all features within [lo, hi]
+        lo, hi = map(float, test_interval)
+        if X_test.ndim == 1:
+            X_mask = (X_test >= lo) & (X_test <= hi)
+        else:
+            X_mask = ((X_test >= lo) & (X_test <= hi)).all(dim=1)  # (N,)
+
+        # MC-based NLL (only over rows inside the interval)
         mc_nll = gaussian_mixture_mc_nll(
-            y=y_test,
-            mu_stack=mu_stack_real,
-            var_stack=var_stack_real,
-            reduce=True,
+            y=y_test[X_mask],
+            mu_stack=mu_stack_real[:, X_mask],
+            var_stack=var_stack_real[:, X_mask],
+        )
+
+        cal_score = kuleshov_calibration_score_mc(
+            y=y_test[X_mask],
+            mu_stack=mu_stack_real[:, X_mask],
+            var_stack=var_stack_real[:, X_mask],
         )
 
         return (
@@ -263,4 +282,5 @@ class DeepEnsemble:
             epistemic_real.cpu().numpy(),
             aleatoric_real.cpu().numpy(),
             mc_nll.cpu().numpy(),
+            cal_score.cpu().numpy(),
         )
