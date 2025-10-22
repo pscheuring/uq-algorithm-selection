@@ -16,11 +16,10 @@ LOG_DIR = BASE_DIR / "logs" / RUN_TIMESTAMP
 
 # File paths
 LOG_PATH = LOG_DIR / "main.log"
-DEFAULT_EXPERIMENT_PATH = CONFIG_DIR / "default_experiment.yaml"
-EXPERIMENT_FEATURES_PATH = CONFIG_DIR / "experiment_features.yaml"
-EXPERIMENT_INSTANCES_PATH = CONFIG_DIR / "experiment_instances.yaml"
-EXPERIMENT_REPEATS_PATH = CONFIG_DIR / "experiment_repeats.yaml"
+EXPERIMENT_CONFIG_PATH = CONFIG_DIR / "experiment.yaml"
 SUMMARY_PATH = RESULTS_DIR / "benchmark_summary.csv"
+META_FEATURES_PATH = DATA_DIR / "meta_feature_values_norm.csv"
+ALGORITHM_PERFORMANCE_PATH = DATA_DIR / "algorithm_performances"
 
 
 ### Benchmark summary ###
@@ -45,4 +44,4 @@ SUMMARY_COLUMNS = [
 LOGGING_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 PROJECT_LOGGER_NAME = "uq_algorithm_selection"
-LOGGING_LEVEL = logging.INFO
+LOGGING_LEVEL = logging.WARN
