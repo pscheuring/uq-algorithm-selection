@@ -55,6 +55,7 @@ def generate_benchmark_jobs(config_path: str) -> List[Dict]:
     test_cfg = data_cfg["test_data"]
     test_intervals = test_cfg["interval"]
     test_grid_lengths = test_cfg["grid_length"]
+    test_add_points = test_cfg["add_points"]
 
     # Models config: list of {model_name: {params}}
     model_cfg = experiment_cfg["models"]
@@ -76,7 +77,7 @@ def generate_benchmark_jobs(config_path: str) -> List[Dict]:
 
     all_jobs = []
 
-    for fn, tr_int, tr_n, tr_r, te_int, te_grid, (
+    for fn, tr_int, tr_n, tr_r, te_int, te_grid, te_points, (
         model_name,
         model_params,
     ) in itertools.product(
@@ -86,6 +87,7 @@ def generate_benchmark_jobs(config_path: str) -> List[Dict]:
         train_repeats,
         test_intervals,
         test_grid_lengths,
+        test_add_points,
         models_expanded,
     ):
         job = {
@@ -98,6 +100,7 @@ def generate_benchmark_jobs(config_path: str) -> List[Dict]:
             "train_repeats": tr_r,
             "test_interval": te_int,
             "test_grid_length": te_grid,
+            "test_add_points": te_points,
             "model_name": model_name,
             "model_params": model_params,
         }
@@ -213,14 +216,39 @@ def generate_result_path(base_dir: str, job: Dict) -> str:
     Build a readable, short path. Example:
       <base>/<model_name>/seed42_fn-nl2_nz-nl2_tr-m2_2_te-m2_2_trn1000x1_ten10000x1_model-bnn/250920_1342_data
     """
+
+    def _extract_number_from_function(job, prefix="f"):
+        """Extract the *last* number after a certain prefix (e.g. "f", "sigma")."""
+        fn_field = job.get("function", None)
+        if fn_field is None:
+            return "0"
+
+        def flatten(x):
+            if isinstance(x, (list, tuple)):
+                for xi in x:
+                    yield from flatten(xi)
+            else:
+                yield str(x)
+
+        pattern = rf"{prefix}[_a-z]*?(\d+)"
+        last_match = None
+
+        for item in flatten(fn_field):
+            matches = list(re.finditer(pattern, item))
+            if matches:
+                # Take the *last* match in this item
+                last_match = matches[-1].group(1)
+
+        return last_match if last_match is not None else "0"
+
     parts = []
 
-    fn_match = re.search(r"\d+", job["function"][0])
-    nz_match = re.search(r"\d+", job["function"][1])
+    fn_match = _extract_number_from_function(job, prefix="f")
+    nz_match = _extract_number_from_function(job, prefix="sigma")
 
     parts.append(f"seed-{job['seed']}")
-    parts.append(f"fn-{fn_match.group()}")
-    parts.append(f"nz-{nz_match.group()}")
+    parts.append(f"fn-{fn_match}")
+    parts.append(f"nz-{nz_match}")
     parts.append(f"tri-{job['train_interval']}")
     parts.append(f"tei-{job['test_interval']}")
     parts.append(f"trn-{job['train_instances']}x{job['train_repeats']}")
@@ -240,27 +268,37 @@ def generate_result_path(base_dir: str, job: Dict) -> str:
 
 
 def save_results(
+    epoch_losses_all,
     preds_all,
     epistemic_all,
     aleatoric_all,
+    nll_all,
+    cal_score_all,
     aleatoric_true,
     X_test,
     X_train,
     y_test,
     y_train,
-    train_times,
-    infer_times,
+    train_time_all,
+    infer_time_all,
     job,
     results_dir,
 ):
     """Save all results, data, times, config to results_dir."""
     os.makedirs(results_dir, exist_ok=True)
 
+    # Save losses
+    np.save(results_dir / "epoch_losses_all.npy", epoch_losses_all)
+
     # Save predictions and uncertainties
     np.save(results_dir / "y_pred_all.npy", preds_all)
     np.save(results_dir / "epistemic_all.npy", epistemic_all)
     np.save(results_dir / "aleatoric_all.npy", aleatoric_all)
     np.save(results_dir / "aleatoric_true.npy", aleatoric_true)
+
+    # Save eval metrics
+    np.save(results_dir / "nll_all.npy", np.array(nll_all))
+    np.save(results_dir / "cal_score_all.npy", np.array(cal_score_all))
 
     # Save train and test data
     np.save(results_dir / "X_test.npy", X_test)
@@ -269,8 +307,8 @@ def save_results(
     np.save(results_dir / "y_train.npy", y_train)
 
     # Save times
-    np.save(results_dir / "train_times.npy", np.array(train_times))
-    np.save(results_dir / "infer_times.npy", np.array(infer_times))
+    np.save(results_dir / "train_times.npy", np.array(train_time_all))
+    np.save(results_dir / "infer_times.npy", np.array(infer_time_all))
 
     # Save config
     with open(results_dir / "config.json", "w") as f:
