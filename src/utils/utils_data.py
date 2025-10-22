@@ -21,7 +21,7 @@ def create_train_test_data(
 
     Returns:
         tuple[pd.DataFrame, pd.DataFrame, int]:
-            - df_train: columns x1..xD, y (or tuple of y's), y_clean (train only), sigma
+            - df_train: columns x1..xD, y (or tuple of y's), sigma
             - df_test:  columns x1..xD, y (or tuple of y's), sigma
             - n_features: input dimensionality D
     """
@@ -54,7 +54,7 @@ def create_train_test_data_single_output(
         train_n_repeats (int): Repeats per instance.
         test_interval (list): [a, b].
         test_grid_length (int): Number of grid points per axis for the test set.
-        (optional) test_points (list[list[float]]): Specific test points.
+        (optional) add_test_points (list[list[float]]): Specific test points.
 
     Returns:
         tuple[pd.DataFrame, pd.DataFrame, int]:
@@ -68,7 +68,6 @@ def create_train_test_data_single_output(
     x_cols_train = [f"x{i + 1}" for i in range(d_train)]
     df_train = pd.DataFrame(train["X"], columns=x_cols_train)
     df_train["y"] = train["y"]
-    df_train["y_clean"] = train["y_clean"]
     df_train["sigma"] = train["sigma"]
 
     # Test
@@ -103,8 +102,8 @@ def create_train_test_data_multi_output(
             df_train, df_test, n_features
 
     Notes:
-        - df_train columns: x1..xD, y, y_clean, sigma
-          where y/y_clean/sigma are per-row tuples: (y1, y2, ...).
+        - df_train columns: x1..xD, y, sigma
+          where y/sigma are per-row tuples: (y1, y2, ...).
         - df_test columns: x1..xD, y, sigma (y in test is “clean” -> without noise).
     """
     # Normalize to a list of pairs
@@ -147,7 +146,6 @@ def create_train_test_data_multi_output(
 
     # Stack per-output targets and noises: shape (N, K)
     y_train = np.stack([tr["y"] for tr in train_runs], axis=1)
-    y_clean_train = np.stack([tr["y_clean"] for tr in train_runs], axis=1)
     sigma_train = np.stack([tr["sigma"] for tr in train_runs], axis=1)
 
     y_test = np.stack([te["y"] for te in test_runs], axis=1)
@@ -155,7 +153,6 @@ def create_train_test_data_multi_output(
 
     # Store per-row tuples
     df_train["y"] = list(map(tuple, y_train))
-    df_train["y_clean"] = list(map(tuple, y_clean_train))
     df_train["sigma"] = list(map(tuple, sigma_train))
 
     df_test["y"] = list(map(tuple, y_test))
