@@ -3,21 +3,24 @@ import json
 import os
 import random
 import re
+from collections.abc import Iterable, Mapping, Sequence
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 import numpy as np
 import pandas as pd
 import torch
 import yaml
-from copy import deepcopy
 
 from src.constants import RESULTS_DIR, SUMMARY_COLUMNS, SUMMARY_PATH
 from src.utils.utils_logging import logger
 
+Job = dict[str, Any]
 
-def set_global_seed(seed: int):
+
+def set_global_seed(seed: int) -> None:
     """Set seed for all used libraries to get reproducible results."""
     random.seed(seed)
     torch.manual_seed(seed)
@@ -27,46 +30,48 @@ def set_global_seed(seed: int):
     torch.set_num_threads(1)
 
 
-def load_yaml(path: str) -> dict:
+def load_yaml(path: str | Path) -> dict[str, Any]:
     """Load a YAML file."""
-    with open(path, "r") as f:
+    path = Path(path)
+    with path.open("r") as f:
         return yaml.safe_load(f)
 
 
-def generate_benchmark_jobs(config_path: str) -> List[Dict]:
+def generate_benchmark_jobs(config_path: str | Path) -> list[Job]:
     """Generate all benchmark jobs (Cartesian product) for the given config."""
     # Experiment configs
     experiment_cfg = load_yaml(config_path)["experiment"]
-    experiment_name = experiment_cfg["name"]
-    model_runs = experiment_cfg["model_runs"]
-    seed = experiment_cfg["seed"]
+    experiment_name: str = experiment_cfg["name"]
+    model_runs: int = experiment_cfg["model_runs"]
+    seed: int = experiment_cfg["seed"]
 
     # Data configs
     data_cfg = experiment_cfg["data"]
-    functions = data_cfg["function"]
+    functions: Sequence[Any] = data_cfg["function"]
 
     # Train data configs
     train_cfg = data_cfg["train_data"]
-    train_intervals = train_cfg["interval"]
-    train_instances = train_cfg["n_instances"]
-    train_repeats = train_cfg["n_repeats"]
+    train_intervals: Sequence[Any] = train_cfg["interval"]
+    train_instances: Sequence[int] = train_cfg["n_instances"]
+    train_repeats: Sequence[int] = train_cfg["n_repeats"]
 
     # Test data configs
     test_cfg = data_cfg["test_data"]
-    test_intervals = test_cfg["interval"]
-    test_grid_lengths = test_cfg["grid_length"]
-    test_add_points = test_cfg["add_points"]
+    test_intervals: Sequence[Any] = test_cfg["interval"]
+    test_grid_lengths: Sequence[int] = test_cfg["grid_length"]
+    test_add_points: Sequence[Any] = test_cfg["add_points"]
 
     # Models config: list of {model_name: {params}}
-    model_cfg = experiment_cfg["models"]
-    # --- Base-Params extrahieren ---
-    base_params = {}
+    model_cfg: list[dict[str, Any]] = experiment_cfg["models"]
+
+    # Extract base params
+    base_params: dict[str, Any] = {}
     for model in model_cfg:
         if "base_model" in model:
             base_params = dict(model["base_model"])
             break
 
-    models_expanded = []
+    models_expanded: list[tuple[str, dict[str, Any]]] = []
     for model in model_cfg:
         if "base_model" in model:
             continue
@@ -75,7 +80,7 @@ def generate_benchmark_jobs(config_path: str) -> List[Dict]:
         merged.update(params)
         models_expanded.append((name, merged))
 
-    all_jobs = []
+    all_jobs: list[Job] = []
 
     for fn, tr_int, tr_n, tr_r, te_int, te_grid, te_points, (
         model_name,
@@ -90,7 +95,7 @@ def generate_benchmark_jobs(config_path: str) -> List[Dict]:
         test_add_points,
         models_expanded,
     ):
-        job = {
+        job: Job = {
             "experiment_name": experiment_name,
             "model_runs": model_runs,
             "seed": seed,
@@ -107,8 +112,8 @@ def generate_benchmark_jobs(config_path: str) -> List[Dict]:
         all_jobs.append(job)
 
     # Deduplicate
-    seen = set()
-    unique_jobs: List[Dict] = []
+    seen: set[str] = set()
+    unique_jobs: list[Job] = []
     for job in all_jobs:
         key = json.dumps(job, sort_keys=True)
         if key not in seen:
@@ -116,12 +121,45 @@ def generate_benchmark_jobs(config_path: str) -> List[Dict]:
             unique_jobs.append(job)
 
     logger.info(
-        f"Generated {len(unique_jobs)} benchmark jobs for experiment {experiment_name}."
+        "Generated %d benchmark jobs for experiment %s.",
+        len(unique_jobs),
+        experiment_name,
     )
     return unique_jobs
 
 
-def append_summary(job: Dict, result_dir: str) -> None:
+def _split_functions_and_noise(fn_spec: Any) -> tuple[list[Any], list[Any]]:
+    """
+    Split job['function'] into two lists:
+      - list of f_* names
+      - list of sigma_* names
+
+    Supported shapes:
+      - [f, sigma]
+      - [[f1, s1], [f2, s2], ...]
+    """
+    if fn_spec is None:
+        return [], []
+
+    # Multi-target: list of [f, sigma] pairs
+    if (
+        isinstance(fn_spec, (list, tuple))
+        and len(fn_spec) > 0
+        and isinstance(fn_spec[0], (list, tuple))
+    ):
+        funcs = [pair[0] for pair in fn_spec]
+        noises = [pair[1] for pair in fn_spec]
+        return funcs, noises
+
+    # Single-target: [f, sigma]
+    if isinstance(fn_spec, (list, tuple)) and len(fn_spec) == 2:
+        return [fn_spec[0]], [fn_spec[1]]
+
+    # Fallback: just one function without noise
+    return [fn_spec], [None]
+
+
+def append_summary(job: Mapping[str, Any], result_dir: Path) -> None:
     """
     Append a single row to the global benchmark_summary.csv.
 
@@ -131,15 +169,26 @@ def append_summary(job: Dict, result_dir: str) -> None:
         - A completion timestamp is added.
 
     Args:
-        job (Dict): Full job dict (all parameters).
-        result_dir (str): Absolute path to the result folder (will be converted to relative).
+        job: Full job dict (all parameters).
+        result_dir: Absolute path to the result folder (will be converted to relative).
     """
-    row = {}
+    fn_funcs, fn_noises = _split_functions_and_noise(job.get("function"))
+
+    row: dict[str, Any] = {}
     for col in SUMMARY_COLUMNS:
         if col == "function":
-            row[col] = job["function"][0] if "function" in job else None
+            # Single-target: store single function name as before
+            if len(fn_funcs) == 1:
+                row[col] = fn_funcs[0]
+            else:
+                # Multi-target: store all f_* names as JSON list
+                row[col] = json.dumps(fn_funcs)
         elif col == "noise":
-            row[col] = job["function"][1] if "function" in job else None
+            if len(fn_noises) == 1:
+                row[col] = fn_noises[0]
+            else:
+                # Multi-target: store all sigma_* names as JSON list
+                row[col] = json.dumps(fn_noises)
         else:
             row[col] = job.get(col, None)
 
@@ -152,8 +201,8 @@ def append_summary(job: Dict, result_dir: str) -> None:
     df_row.to_csv(SUMMARY_PATH, mode="a", header=False, index=False)
 
 
-def _as_str(v):
-    # stringify complex types so comparison is scalar-vs-scalar
+def _as_str(v: Any) -> str:
+    """Stringify complex types so comparison is scalar-vs-scalar."""
     if isinstance(v, (list, dict, tuple)):
         return json.dumps(v, sort_keys=True)
     if v is None:
@@ -161,12 +210,14 @@ def _as_str(v):
     return str(v)
 
 
-def job_already_done(job: Dict[str, Any]) -> bool:
+def job_already_done(job: Mapping[str, Any]) -> bool:
     """
     A job is 'done' if any CSV row matches ALL job columns exactly.
+
     Special case:
-      - SUMMARY_COLUMNS enthält 'function' und 'noise'
-      - job['function'] ist eine Liste [function_value, noise_value]
+      - SUMMARY_COLUMNS contains 'function' and 'noise'
+      - job['function'] can be either
+            [f, sigma] or [[f1, s1], [f2, s2], ...]
     Complex fields are compared as JSON strings via _as_str.
     """
     if not SUMMARY_PATH.exists():
@@ -183,14 +234,19 @@ def job_already_done(job: Dict[str, Any]) -> bool:
         if col not in df.columns:
             return False
 
-    def _job_value_for(col: str):
+    fn_funcs, fn_noises = _split_functions_and_noise(job.get("function"))
+
+    def _job_value_for(col: str) -> Any:
         if col == "function":
-            return (job.get("function") or [None, None])[0]
+            # Single-target: single name, multi-target: list of f_* names
+            return fn_funcs[0] if len(fn_funcs) == 1 else fn_funcs
         if col == "noise":
-            return (job.get("function") or [None, None])[1]
+            return fn_noises[0] if len(fn_noises) == 1 else fn_noises
         return job.get(col, None)
 
-    wanted = {col: _as_str(_job_value_for(col)) for col in SUMMARY_COLUMNS}
+    wanted: dict[str, str] = {
+        col: _as_str(_job_value_for(col)) for col in SUMMARY_COLUMNS
+    }
 
     mask = pd.Series(True, index=df.index)
     for col, val in wanted.items():
@@ -199,52 +255,68 @@ def job_already_done(job: Dict[str, Any]) -> bool:
     return bool(mask.any())
 
 
-def create_full_job_name(job: Dict) -> str:
+def create_full_job_name(job: Mapping[str, Any]) -> str:
     """Compact string for job description in logs/UIs."""
+    fn_funcs, fn_noises = _split_functions_and_noise(job.get("function"))
+
+    if len(fn_funcs) == 1:
+        func_str = fn_funcs[0]
+    else:
+        func_str = f"{fn_funcs[0]}+{len(fn_funcs) - 1} more"
+
+    if len(fn_noises) == 1:
+        noise_str = fn_noises[0]
+    else:
+        noise_str = f"{fn_noises[0]}+{len(fn_noises) - 1} more"
+
     return (
-        f"Func:{job['function'][0]} | "
-        f"Noise:{job['function'][1]} | "
-        f"Train: interval: {job['train_interval']}, instances: {job['train_instances']}, repeats: {job['train_repeats']} | "
-        f"Test: interval: {job['test_interval']}, grid_length: {job['test_grid_length']} | "
+        f"Func:{func_str} | "
+        f"Noise:{noise_str} | "
+        f"Train: interval: {job['train_interval']}, "
+        f"instances: {job['train_instances']}, "
+        f"repeats: {job['train_repeats']} | "
+        f"Test: interval: {job['test_interval']}, "
+        f"grid_length: {job['test_grid_length']} | "
         f"Seed:{job['seed']} | "
         f"Model:{job['model_name']}"
     )
 
 
-def generate_result_path(base_dir: str, job: Dict) -> str:
+def generate_result_path(base_dir: str | Path, job: Mapping[str, Any]) -> Path:
     """
     Build a readable, short path. Example:
-      <base>/<model_name>/seed42_fn-nl2_nz-nl2_tr-m2_2_te-m2_2_trn1000x1_ten10000x1_model-bnn/250920_1342_data
+      <base>/<model_name>/seed42_fn-nl2_nz-nl2_tr-m2_2_te-m2_2_trn1000x1_ten10000x1_model-bnn/250920_1342
     """
 
-    def _extract_number_from_function(job, prefix="f"):
-        """Extract the *last* number after a certain prefix (e.g. "f", "sigma")."""
-        fn_field = job.get("function", None)
+    def _extract_number_from_function(job_mapping: Mapping[str, Any]) -> str:
+        """Extract the number directly before `_feat` from any string in `function`."""
+        fn_field = job_mapping.get("function", None)
         if fn_field is None:
             return "0"
 
-        def flatten(x):
+        def flatten(x: Any) -> Iterable[str]:
             if isinstance(x, (list, tuple)):
                 for xi in x:
                     yield from flatten(xi)
             else:
                 yield str(x)
 
-        pattern = rf"{prefix}[_a-z]*?(\d+)"
-        last_match = None
+        pattern = r"(\d+)_feat"
+        last_match: str | None = None
 
         for item in flatten(fn_field):
             matches = list(re.finditer(pattern, item))
             if matches:
-                # Take the *last* match in this item
                 last_match = matches[-1].group(1)
 
         return last_match if last_match is not None else "0"
 
-    parts = []
+    base_dir = Path(base_dir)
 
-    fn_match = _extract_number_from_function(job, prefix="f")
-    nz_match = _extract_number_from_function(job, prefix="sigma")
+    parts: list[str] = []
+
+    fn_match = _extract_number_from_function(job)
+    nz_match = _extract_number_from_function(job)
 
     parts.append(f"seed-{job['seed']}")
     parts.append(f"fn-{fn_match}")
@@ -259,32 +331,29 @@ def generate_result_path(base_dir: str, job: Dict) -> str:
     timestamp = datetime.now().strftime("%y%m%d_%H%M")
 
     return (
-        Path(base_dir)
-        / job["experiment_name"]
-        / job["model_name"]
-        / setting
-        / f"{timestamp}"
+        base_dir / job["experiment_name"] / job["model_name"] / setting / f"{timestamp}"
     )
 
 
 def save_results(
-    epoch_losses_all,
-    preds_all,
-    epistemic_all,
-    aleatoric_all,
-    nll_all,
-    cal_score_all,
-    aleatoric_true,
-    X_test,
-    X_train,
-    y_test,
-    y_train,
-    train_time_all,
-    infer_time_all,
-    job,
-    results_dir,
-):
-    """Save all results, data, times, config to results_dir."""
+    epoch_losses_all: np.ndarray,
+    preds_all: np.ndarray,
+    epistemic_all: np.ndarray,
+    aleatoric_all: np.ndarray,
+    nll_ood_all: Sequence[float],
+    nll_id_all: Sequence[float],
+    aleatoric_true: np.ndarray,
+    X_test: np.ndarray,
+    X_train: np.ndarray,
+    y_test: np.ndarray,
+    y_clean: np.ndarray,
+    y_train: np.ndarray,
+    train_time_all: Sequence[float],
+    infer_time_all: Sequence[float],
+    job: Mapping[str, Any],
+    results_dir: Path,
+) -> None:
+    """Save all results, data, times, and config to results_dir."""
     os.makedirs(results_dir, exist_ok=True)
 
     # Save losses
@@ -297,13 +366,14 @@ def save_results(
     np.save(results_dir / "aleatoric_true.npy", aleatoric_true)
 
     # Save eval metrics
-    np.save(results_dir / "nll_all.npy", np.array(nll_all))
-    np.save(results_dir / "cal_score_all.npy", np.array(cal_score_all))
+    np.save(results_dir / "nll_ood_all.npy", np.array(nll_ood_all))
+    np.save(results_dir / "nll_id_all.npy", np.array(nll_id_all))
 
     # Save train and test data
     np.save(results_dir / "X_test.npy", X_test)
     np.save(results_dir / "X_train.npy", X_train)
-    np.save(results_dir / "y_true.npy", y_test)
+    np.save(results_dir / "y_test.npy", y_test)
+    np.save(results_dir / "y_clean.npy", y_clean)
     np.save(results_dir / "y_train.npy", y_train)
 
     # Save times
@@ -311,7 +381,7 @@ def save_results(
     np.save(results_dir / "infer_times.npy", np.array(infer_time_all))
 
     # Save config
-    with open(results_dir / "config.json", "w") as f:
-        json.dump(job, f, indent=2)
+    with (results_dir / "config.json").open("w") as f:
+        json.dump(dict(job), f, indent=2)
 
-    logger.info(f"Saved results to: {results_dir}")
+    logger.info("Saved results to: %s", results_dir)
