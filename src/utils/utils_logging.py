@@ -13,10 +13,10 @@ from src.constants import (
 
 def setup_logging() -> None:
     """
-    Initialize logging:
+    Handles logging configuration for the project:
     - Save all logs (DEBUG+) to benchmark.log in a timestamped folder.
-    - Show only INFO+ in the console.
     - Only create one log file per run.
+    - Show only logging level defined in constants.py in the console.
     """
     os.makedirs(LOG_DIR, exist_ok=True)
 
