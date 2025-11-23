@@ -77,6 +77,7 @@ def create_train_test_data_single_output(
     df_test = pd.DataFrame(test["X"], columns=x_cols_test)
     df_test["y"] = test["y"]
     df_test["sigma"] = test["sigma"]
+    df_test["y_clean"] = test["y_clean"]
 
     # Input dimensionality
     n_features = int(train["n_features"])
@@ -107,7 +108,7 @@ def create_train_test_data_multi_output(
         - df_test columns: x1..xD, y, sigma (y in test is “clean” -> without noise).
     """
     # Normalize to a list of pairs
-    pairs: Sequence[Sequence[Any]] = job["function"]  # type: ignore[index]
+    pairs: Sequence[Sequence[Any]] = job["function"]
 
     train_runs: list[dict[str, Any]] = []
     test_runs: list[dict[str, Any]] = []
@@ -150,6 +151,7 @@ def create_train_test_data_multi_output(
 
     y_test = np.stack([te["y"] for te in test_runs], axis=1)
     sigma_test = np.stack([te["sigma"] for te in test_runs], axis=1)
+    y_clean = np.stack([te["y_clean"] for te in test_runs], axis=1)
 
     # Store per-row tuples
     df_train["y"] = list(map(tuple, y_train))
@@ -157,5 +159,6 @@ def create_train_test_data_multi_output(
 
     df_test["y"] = list(map(tuple, y_test))
     df_test["sigma"] = list(map(tuple, sigma_test))
+    df_test["y_clean"] = list(map(tuple, y_clean))
 
     return df_train, df_test, n_features
