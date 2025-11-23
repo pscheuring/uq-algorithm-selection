@@ -5,7 +5,12 @@ import pandas as pd
 from tqdm import tqdm
 
 from src.constants import (
-    EXPERIMENT_CONFIG_PATH,
+    EXP1_CONFIG_PATH,
+    EXP2_CONFIG_PATH,
+    EXP3_CONFIG_PATH,
+    EXP4_CONFIG_PATH,
+    EXP5_DISTINCT_CONFIG_PATH,
+    EXP5_SIMILAR_CONFIG_PATH,
     RESULTS_DIR,
     SUMMARY_COLUMNS,
     SUMMARY_PATH,
@@ -64,22 +69,24 @@ def main(experiment_path: str):
             y_test = np.stack(df_test["y"].to_numpy(), axis=0).astype(
                 np.float32
             )  # (N, d)
+            y_clean = np.stack(df_test["y_clean"].to_numpy(), axis=0).astype(
+                np.float32
+            )  # (N, d)
+            sigma_test = np.stack(df_test["sigma"].to_numpy(), axis=0).astype(
+                np.float32
+            )  # (N, d)
 
             # Normalize y_train
             y_mean = y_train.mean(axis=0)
             y_std = y_train.std(axis=0)
             y_train_norm = (y_train - y_mean) / y_std
 
-            sigma_test = np.stack(df_test["sigma"].to_numpy(), axis=0).astype(
-                np.float32
-            )  # (N, d)
-
             epoch_losses_all = []
             preds_all = []
             epistemic_all = []
             aleatoric_all = []
-            nll_all = []
-            cal_score_all = []
+            nll_ood_all = []
+            nll_id_all = []
             train_time_all = []
             inference_time_all = []
             for run_idx in range(job["model_runs"]):
@@ -98,9 +105,14 @@ def main(experiment_path: str):
 
                 # Inference time
                 t2 = time.time()
-                y_pred, epistemic, aleatoric, nll, cal_score = (
+                y_pred, epistemic, aleatoric, nll_ood, nll_id = (
                     model.predict_with_uncertainties(
-                        X_test, y_test, y_mean, y_std, job["test_interval"]
+                        X_test,
+                        y_test,
+                        y_mean,
+                        y_std,
+                        job["test_interval"],
+                        job["train_interval"],
                     )
                 )
                 t3 = time.time()
@@ -111,8 +123,8 @@ def main(experiment_path: str):
                 preds_all.append(y_pred)
                 epistemic_all.append(epistemic)
                 aleatoric_all.append(aleatoric)
-                nll_all.append(nll)
-                cal_score_all.append(cal_score)
+                nll_ood_all.append(nll_ood)
+                nll_id_all.append(nll_id)
 
             # Save all results
             results_dir = generate_result_path(RESULTS_DIR, job)
@@ -121,12 +133,13 @@ def main(experiment_path: str):
                 preds_all=np.stack(preds_all),
                 epistemic_all=np.stack(epistemic_all),
                 aleatoric_all=np.stack(aleatoric_all),
-                nll_all=nll_all,
-                cal_score_all=cal_score_all,
+                nll_ood_all=nll_ood_all,
+                nll_id_all=nll_id_all,
                 aleatoric_true=sigma_test**2,
                 X_test=X_test,
                 X_train=X_train,
                 y_test=y_test,
+                y_clean=y_clean,
                 y_train=y_train,
                 train_time_all=train_time_all,
                 infer_time_all=inference_time_all,
@@ -140,4 +153,4 @@ def main(experiment_path: str):
 
 
 if __name__ == "__main__":
-    main(experiment_path=EXPERIMENT_CONFIG_PATH)
+    main(experiment_path=EXP5_SIMILAR_CONFIG_PATH)
