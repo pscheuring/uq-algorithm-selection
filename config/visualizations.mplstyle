@@ -1,0 +1,50 @@
+##############################
+#  Global Visualization Style
+##############################
+
+# ============================
+# Colors / Colormap
+# ============================
+
+axes.prop_cycle : cycler("color", ["#006BA4", "#FF800E", "#ABABAB", "#595959", "#5F9ED1", "#C85200", "#898989", "#A2C8EC", "#FFBC79", "#CFCFCF"])
+
+
+# ============================
+# Figure defaults
+# ============================
+
+figure.figsize : 20, 6          # FIGURE_SIZE
+figure.dpi     : 150            # DPI_DEFAULT
+
+
+# ============================
+# Axes / Lines / Grid
+# ============================
+
+axes.linewidth : 0.8            # AXES_LINEWIDTH
+lines.linewidth : 2.5           # LINES_LINEWIDTH
+lines.markersize : 4
+axes.grid: True
+
+
+
+# ============================
+# Fonts
+# ============================
+
+font.family      : serif        # FONT_FAMILY
+mathtext.fontset : cm           # MATHTEXT_FONTSET
+
+axes.labelsize   : 20           # AXIS_LABEL_FONT_SIZE
+axes.titlesize   : 22           # TITLE_FONT_SIZE
+xtick.labelsize  : 18           # AXIS_TICKS_FONT_SIZE
+ytick.labelsize  : 18           # AXIS_TICKS_FONT_SIZE
+font.size        : 18           # kannst du bei Bedarf anpassen
+
+
+# ============================
+# Legend
+# ============================
+
+legend.frameon  : False
+legend.fontsize : 20            # LEGEND_FONT_SIZE
