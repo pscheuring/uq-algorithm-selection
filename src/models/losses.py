@@ -37,8 +37,22 @@ def _nig_nll(
     alpha: torch.Tensor,
     beta: torch.Tensor,
     reduce: bool = True,
+    per_dimension: bool = False,
 ) -> torch.Tensor:
-    """Negative log-likelihood of Student-t marginal as in Amini et al. (2020)."""
+    """
+    Negative log-likelihood of the Student-t marginal as in Amini et al. (2020).
+
+    If reduce=False:
+        Returns the elementwise NLL with the same shape as y.
+
+    If reduce=True and per_dimension=False (default, legacy behavior):
+        Returns a single scalar NLL averaged over all samples and dimensions.
+
+    If reduce=True and per_dimension=True:
+        Returns NLL averaged over samples only:
+            - scalar for 1D output
+            - vector of shape (D,) for multi-output (per-target NLL)
+    """
     twoBlambda = 2.0 * beta * (1.0 + v)
     nll = (
         0.5 * torch.log(torch.tensor(math.pi, dtype=y.dtype, device=y.device) / v)
@@ -47,7 +61,16 @@ def _nig_nll(
         + torch.lgamma(alpha)
         - torch.lgamma(alpha + 0.5)
     )
-    return nll.mean() if reduce else nll
+
+    if not reduce:
+        return nll
+
+    if per_dimension:  # needed for evaluation of multi-target models
+        # For y shape (N, D) -> (D,)
+        # For y shape (N,)   -> scalar
+        return nll.mean(dim=0)
+
+    return nll.mean()
 
 
 def _kl_nig(

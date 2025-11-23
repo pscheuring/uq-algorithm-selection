@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
-from src.evaluation import gaussian_mixture_mc_nll, kuleshov_calibration_score_mc
+from src.evaluation import gaussian_mixture_nll
 from src.models.base_model import BaseModel
 from src.models.layers import DenseNormal
 from src.utils.utils_logging import logger
@@ -202,7 +202,8 @@ class DeepEnsemble:
         y_mean: np.ndarray | float,
         y_std: np.ndarray | float,
         test_interval: list[float, float],
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
+        train_interval: list[float, float],
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Aggregate predictions across ensemble members and compute NLL over interval-only samples.
 
         If test_interval = [lo, hi] is provided, the NLL is computed only over rows of X_test
@@ -215,14 +216,15 @@ class DeepEnsemble:
             y_mean (np.ndarray | float): Training-set target mean (D,) or scalar.
             y_std (np.ndarray | float): Training-set target std (D,) or scalar.
             test_interval (list[float, float]): [lo, hi] interval used to select rows included in NLL.
+            train_interval (list[float, float]): [lo, hi] interval used to select rows included in NLL.
 
         Returns:
             Tuple:
                 - mu_mean (np.ndarray): Predictive mean, shape (N, D)
                 - epistemic (np.ndarray): Epistemic variance, shape (N, D)
                 - aleatoric (np.ndarray): Aleatoric variance, shape (N, D)
-                - nll (float): Negative log-likelihood over rows inside [lo, hi]
-                - cal_score (np.ndarray): Calibration score as defined in (Kuleshov et al., 2018)
+                - nll_id (np.ndarray): MC mixture negative log-likelihood on ID data
+                - nll_ood (np.ndarray): MC mixture negative log-likelihood on full test interval (including OOD)
         """
         device = self.members[0].device
 
@@ -232,6 +234,10 @@ class DeepEnsemble:
             y_test = y_test.unsqueeze(1)
         if X_test.ndim == 1:
             X_test = X_test.unsqueeze(1)
+
+        N = X_test.shape[0]
+        D = y_test.shape[1]
+        M = len(self.members)
 
         # Convert y_mean/y_std to tensors
         y_mean = torch.as_tensor(y_mean, dtype=torch.float32, device=device).view(1, -1)
@@ -245,8 +251,10 @@ class DeepEnsemble:
             mu_samples.append(mu)  # (N, D)
             var_samples.append(var)  # (N, D)
 
-        mu_stack = torch.stack(mu_samples, dim=0)  # (S, N, D)
-        var_stack = torch.stack(var_samples, dim=0)  # (S, N, D)
+        mu_stack = torch.stack(mu_samples, dim=0)  # (M, N, D)
+        var_stack = torch.stack(var_samples, dim=0)  # (M, N, D)
+        assert mu_stack.shape == (M, N, D)
+        assert var_stack.shape == (M, N, D)
 
         # Denormalize all stochastic samples
         mu_stack_real = mu_stack * y_std + y_mean
@@ -256,31 +264,45 @@ class DeepEnsemble:
         mu_mean_real = mu_stack_real.mean(dim=0)  # (N, D)
         epistemic_real = mu_stack_real.var(dim=0, unbiased=False)  # (N, D)
         aleatoric_real = var_stack_real.mean(dim=0)  # (N, D)
+        assert mu_mean_real.shape == (N, D)
+        assert epistemic_real.shape == (N, D)
+        assert aleatoric_real.shape == (N, D)
 
-        # Build interval mask: keep rows with all features within [lo, hi]
-        lo, hi = map(float, test_interval)
+        # Build OOD interval mask
+        lo_test, hi_test = map(float, test_interval)
         if X_test.ndim == 1:
-            X_mask = (X_test >= lo) & (X_test <= hi)
+            X_mask_ood = (X_test >= lo_test) & (X_test <= hi_test)
         else:
-            X_mask = ((X_test >= lo) & (X_test <= hi)).all(dim=1)  # (N,)
+            X_mask_ood = ((X_test >= lo_test) & (X_test <= hi_test)).all(dim=1)  # (N,)
 
-        # MC-based NLL (only over rows inside the interval)
-        mc_nll = gaussian_mixture_mc_nll(
-            y=y_test[X_mask],
-            mu_stack=mu_stack_real[:, X_mask],
-            var_stack=var_stack_real[:, X_mask],
+        # Build ID interval mask
+        train_interval = np.array(train_interval, dtype=float)
+        if train_interval.ndim == 2:  # in-between OOD
+            lo_train = train_interval[:, 0].min()
+            hi_train = train_interval[:, 1].max()
+        else:
+            lo_train, hi_train = map(float, train_interval)
+        if X_test.ndim == 1:
+            X_mask_id = (X_test >= lo_train) & (X_test <= hi_train)
+        else:
+            X_mask_id = ((X_test >= lo_train) & (X_test <= hi_train)).all(dim=1)  # (N,)
+
+        # Gaussian Mixture NLL
+        nll_ood = gaussian_mixture_nll(
+            y=y_test[X_mask_ood],
+            mu_stack=mu_stack_real[:, X_mask_ood],
+            var_stack=var_stack_real[:, X_mask_ood],
         )
-
-        cal_score = kuleshov_calibration_score_mc(
-            y=y_test[X_mask],
-            mu_stack=mu_stack_real[:, X_mask],
-            var_stack=var_stack_real[:, X_mask],
+        nll_id = gaussian_mixture_nll(
+            y=y_test[X_mask_id],
+            mu_stack=mu_stack_real[:, X_mask_id],
+            var_stack=var_stack_real[:, X_mask_id],
         )
 
         return (
             mu_mean_real.cpu().numpy(),
             epistemic_real.cpu().numpy(),
             aleatoric_real.cpu().numpy(),
-            mc_nll.cpu().numpy(),
-            cal_score.cpu().numpy(),
+            nll_ood.cpu().numpy(),
+            nll_id.cpu().numpy(),
         )

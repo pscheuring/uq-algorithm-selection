@@ -6,7 +6,6 @@ import torch.nn as nn
 import torch.optim as optim
 
 from src.models.base_model import BaseModel
-from src.evaluation import kuleshov_calibration_score_der
 from src.models.layers import DenseNormalGamma
 from src.models.losses import _nig_nll, der_loss
 from src.utils.utils_logging import logger
@@ -106,7 +105,8 @@ class DeepEvidentialRegression(BaseModel):
         y_mean: np.ndarray | float,
         y_std: np.ndarray | float,
         test_interval: list[float, float],
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        train_interval: list[float, float],
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Predicts mean, epistemic uncertainty, aleatoric uncertainty, and NIG-based NLL
         for Deep Evidential Regression (Normal–Inverse-Gamma model).
 
@@ -126,14 +126,16 @@ class DeepEvidentialRegression(BaseModel):
             y_std (np.ndarray | float): Training target standard deviation(s), shape (D,) or scalar.
             test_interval (list[float, float]): Interval [lo, hi]; used to select test samples
                 included in the NLL computation.
+            train_interval (list[float, float]): Interval [lo, hi]; used to select training samples
+                included in the NLL computation.
 
         Returns:
             tuple:
                 - mu (np.ndarray): Predictive mean γ, shape (N, D)
                 - epistemic (np.ndarray): Epistemic uncertainty, shape (N, D), computed as β / (v * (α - 1))
                 - aleatoric (np.ndarray): Aleatoric uncertainty, shape (N, D), computed as β / (α - 1)
-                - nll (np.ndarray): Student-t / NIG negative log-likelihood (computed only for [lo, hi])
-                - cal_score (np.ndarray): Calibration score as defined in (Kuleshov et al., 2018)
+                - nll_id (np.ndarray): NIG negative log-likelihood on ID data
+                - nll_ood (np.ndarray): NIG negative log-likelihood on full test interval (including OOD)
         """
         self.eval()
         device = next(self.parameters()).device
@@ -145,6 +147,9 @@ class DeepEvidentialRegression(BaseModel):
         if X_test.ndim == 1:
             X_test = X_test.unsqueeze(1)
 
+        N = X_test.shape[0]
+        D = y_test.shape[1]
+
         # Convert y_mean/y_std to tensors
         y_mean = torch.as_tensor(y_mean, dtype=torch.float32, device=device).view(1, -1)
         y_std = torch.as_tensor(y_std, dtype=torch.float32, device=device).view(1, -1)
@@ -154,39 +159,56 @@ class DeepEvidentialRegression(BaseModel):
 
         gamma = gamma_norm * y_std + y_mean  # (N, D)
         beta = beta_norm * (y_std**2)  # (N, D)
+        assert gamma.shape == (N, D)
+        assert beta.shape == (N, D)
 
         aleatoric = beta / (alpha - 1.0)  # E[σ^2]
         epistemic = beta / (v * (alpha - 1.0))  # Var[μ]
 
-        # Build interval mask: keep rows with all features within [lo, hi]
-        lo, hi = map(float, test_interval)
+        # Build OOD mask
+        lo_test, hi_test = map(float, test_interval)
         if X_test.ndim == 1:
-            X_mask = (X_test >= lo) & (X_test <= hi)
+            X_mask_ood = (X_test >= lo_test) & (X_test <= hi_test)
         else:
-            X_mask = ((X_test >= lo) & (X_test <= hi)).all(dim=1)  # (N,)
+            X_mask_ood = ((X_test >= lo_test) & (X_test <= hi_test)).all(dim=1)  # (N,)
 
-        # Normal-Inverse-Gamma negative log-likelihood (only inside [lo, hi])
-        nig_nll = _nig_nll(
-            y_test[X_mask],
-            gamma[X_mask],
-            v[X_mask],
-            alpha[X_mask],
-            beta[X_mask],
+        # Build ID mask
+        train_interval = np.array(train_interval, dtype=float)
+        if train_interval.ndim == 2:  # in-between OOD
+            lo_train = train_interval[:, 0].min()
+            hi_train = train_interval[:, 1].max()
+        else:
+            lo_train, hi_train = map(float, train_interval)
+        if X_test.ndim == 1:
+            X_mask_id = (X_test >= lo_train) & (X_test <= hi_train)
+        else:
+            X_mask_id = ((X_test >= lo_train) & (X_test <= hi_train)).all(dim=1)  # (N,)
+
+        # Normal-Inverse-Gamma NLL
+        nll_ood = _nig_nll(
+            y_test[X_mask_ood],
+            gamma[X_mask_ood],
+            v[X_mask_ood],
+            alpha[X_mask_ood],
+            beta[X_mask_ood],
             reduce=True,
+            per_dimension=True,
         )
 
-        cal_score = kuleshov_calibration_score_der(
-            y_test[X_mask],
-            gamma[X_mask],
-            v[X_mask],
-            alpha[X_mask],
-            beta[X_mask],
+        nll_id = _nig_nll(
+            y_test[X_mask_id],
+            gamma[X_mask_id],
+            v[X_mask_id],
+            alpha[X_mask_id],
+            beta[X_mask_id],
+            reduce=True,
+            per_dimension=True,
         )
 
         return (
             gamma.cpu().numpy(),
             epistemic.cpu().numpy(),
             aleatoric.cpu().numpy(),
-            nig_nll.cpu().numpy(),
-            cal_score.cpu().numpy(),
+            nll_ood.cpu().numpy(),
+            nll_id.cpu().numpy(),
         )
