@@ -1,51 +1,47 @@
 from collections.abc import Callable
-from typing import Callable, Dict, Union
 
 import numpy as np
 from scipy.special import expit, softplus
 from scipy.stats import qmc
 
 
+### 1 FEATURE ###
 # 1NN-DTW
-def f_cosine__1nn_dtw_1_feat(X: np.ndarray) -> np.ndarray:
+def f_exponential__1nn_dtw_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
-    return expit(
-        0.941927 - 0.110350 * (x1 + 3.316139) + 0.173276 * np.cos(x1 - 12.190082)
-    )
+    return expit(-0.196845 - 0.157658 * (x1 - 3.717433) + 0.001721 * np.exp(x1 + 0.674))
 
 
-def sigma_sinusoidal__1nn_dtw_1_feat(X: np.ndarray) -> np.ndarray:
+def sigma_cubic__1nn_dtw_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        -5.379897 - 0.054016 * (x1 - 24.542853) - 0.205750 * np.sin(x1 + 5.189004)
+        -11.573856 + 0.089195 * (x1 + 79.579092) - 0.00115 * (x1 - 4.801252) ** 3
     )
 
 
 # Arsenal
-def f_cubic_arsenal_1_feat(X: np.ndarray) -> np.ndarray:
+def f_exponential_arsenal_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
-    return expit(
-        1.848639 + 0.003304 * (x1 + 3.674640) - 0.005160 * (x1 + 2.824241) ** 3
-    )
+    return expit(1.973566 + 0.00254 * (x1 + 4.521214) - 0.032041 * np.exp(x1 + 0.08652))
 
 
 def sigma_cubic_arsenal_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        1.585504 + 0.049867 * (x1 - 109.444859) - 0.001591 * (x1 + 0.328558) ** 3
+        -54.086517 + 0.049867 * (x1 + 1006.965114) - 0.001591 * (x1 + 0.328552) ** 3
     )
 
 
 # BOSS
-def f_quadratic_boss_1_feat(X: np.ndarray) -> np.ndarray:
+def f_cubic_boss_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
     return expit(
-        0.506563 + 0.188097 * (x1 - 0.083922) + 0.049220 * (x1 - 1.215081) ** 2
+        -19.982124 + 5.015953 * (x1 - 29.398752) - 0.000159 * (x1 - 101.926779) ** 3
     )
 
 
@@ -53,33 +49,33 @@ def sigma_quadratic_boss_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        -66.201154 + 0.017781 * (x1 + 14.134653) - 0.003416 * (x1 - 1.716402) ** 2
+        -2.975511 - 0.121306 * (x1 + 13.875194) + 0.002152 * (x1 + 17.457081) ** 2
     )
 
 
 # CIF
-def f_quadratic_cif_1_feat(X: np.ndarray) -> np.ndarray:
+def f_cosine_cif_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
     return expit(
-        1.230848 - 0.098095 * (x1 + 3.689441) + 0.013408 * (x1 - 0.384407) ** 2
+        -1.979111 - 0.103916 * (x1 - 29.807034) + 0.229794 * np.cos(x1 - 0.461136)
     )
 
 
-def sigma_quadratic_cif_1_feat(X: np.ndarray) -> np.ndarray:
+def sigma_cubic_cif_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        -4.287526 + 0.030809 * (x1 - 0.460851) + 0.013363 * (x1 - 1.857690) ** 2
+        -4.364636 + 0.956543 * (x1 - 24.975909) - 5.9e-05 * (x1 - 73.943529) ** 3
     )
 
 
 # CNN
-def f_quadratic_cnn_1_feat(X: np.ndarray) -> np.ndarray:
+def f_cosine_cnn_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
     return expit(
-        1.837361 + 0.153910 * (x1 + 2.533334) - 0.023559 * (x1 + 1.401457) ** 2
+        2.518455 + 0.081001 * (x1 - 8.865435) - 0.460887 * np.cos(x1 - 0.434805)
     )
 
 
@@ -87,67 +83,65 @@ def sigma_cubic_cnn_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        95.619976 - 39.445799 * (x1 + 3.751026) + 0.077166 * (x1 - 7.450403) ** 3
+        -4.757417 + 0.018735 * (x1 + 35.214265) - 0.001796 * (x1 - 2.380216) ** 3
     )
 
 
 # Catch22
-def f_quadratic_catch22_1_feat(X: np.ndarray) -> np.ndarray:
+def f_cubic_catch22_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
-    return expit(
-        1.641213 + 0.100582 * (x1 + 3.453945) - 0.007841 * (x1 + 2.519100) ** 2
-    )
+    return expit(0.887057 - 0.159107 * (x1 - 1.65488) + 0.006084 * (x1 + 0.82213) ** 3)
 
 
 def sigma_cubic_catch22_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        -170.064108 + 0.668128 * (x1 + 250.318879) - 0.020206 * (x1 + 0.462914) ** 3
+        -5.71284 + 0.668128 * (x1 + 4.331308) - 0.020206 * (x1 + 0.462914) ** 3
     )
 
 
 # DrCIF
-def f_quadratic_drcif_1_feat(X: np.ndarray) -> np.ndarray:
+def f_cubic_drcif_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
     return expit(
-        2.632163 - 0.157558 * (x1 + 10.967733) + 0.017347 * (x1 + 1.938623) ** 2
+        0.891346 + 0.010175 * (x1 - 1.458503) - 0.001145 * (x1 - 4.559232) ** 3
     )
 
 
-def sigma_cosine_drcif_1_feat(X: np.ndarray) -> np.ndarray:
+def sigma_quadratic_drcif_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        -3.967748 - 0.033118 * (x1 + 0.667889) + 0.024895 * np.cos(x1 + 13.517350)
+        -5.046291 - 0.192197 * (x1 + 0.421337) + 0.008213 * (x1 + 11.075024) ** 2
     )
 
 
 # EE
-def f_cosine_ee_1_feat(X: np.ndarray) -> np.ndarray:
+def f_sinusoidal_ee_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
     return expit(
-        1.555834 - 0.078028 * (x1 - 0.051166) - 0.791565 * np.cos(x1 - 7.604298)
+        3.679372 - 0.078029 * (x1 + 27.163093) - 0.791569 * np.sin(x1 + 0.249687)
     )
 
 
-def sigma_quadratic_ee_1_feat(X: np.ndarray) -> np.ndarray:
+def sigma_cubic_ee_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        -8.773922 - 0.245718 * (x1 - 11.011112) + 0.067859 * (x1 + 1.824243) ** 2
+        14.351948 + 0.350017 * (x1 - 55.021346) - 0.008466 * (x1 - 1.546773) ** 3
     )
 
 
 # FreshPRINCE
-def f_quadratic_freshprince_1_feat(X: np.ndarray) -> np.ndarray:
+def f_cubic_freshprince_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
     return expit(
-        0.598167 + 0.056364 * (x1 + 2.066425) + 0.028482 * (x1 - 1.729583) ** 2
+        0.598212 + 0.090616 * (x1 + 1.838934) - 0.002273 * (x1 - 3.434601) ** 3
     )
 
 
@@ -155,16 +149,16 @@ def sigma_quadratic_freshprince_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        -4.050999 - 0.006800 * (x1 + 7.394498) + 0.008203 * (x1 - 0.479792) ** 2
+        -1.028964 - 0.231054 * (x1 + 19.464579) + 0.008203 * (x1 + 13.189041) ** 2
     )
 
 
 # HC1
-def f_cosine_hc1_1_feat(X: np.ndarray) -> np.ndarray:
+def f_sinusoidal_hc1_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
     return expit(
-        2.570038 - 0.036011 * (x1 + 3.481986) + 0.983148 * np.cos(x1 - 174.125483)
+        -3.796373 - 0.036011 * (x1 - 173.306368) - 0.983149 * np.sin(x1 + 0.232909)
     )
 
 
@@ -172,16 +166,16 @@ def sigma_cubic_hc1_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        4.082507 + 0.188011 * (x1 - 44.853839) - 0.006555 * (x1 - 0.439561) ** 3
+        -11.990515 + 0.188011 * (x1 + 40.635945) - 0.006555 * (x1 - 0.439561) ** 3
     )
 
 
 # HC2
-def f_sinusoidal_hc2_1_feat(X: np.ndarray) -> np.ndarray:
+def f_cosine_hc2_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
     return expit(
-        -0.724537 - 0.032206 * (x1 - 104.018276) + 1.046244 * np.sin(x1 + 3.353197)
+        3.14459 - 0.032208 * (x1 + 16.118847) + 1.046249 * np.cos(x1 + 8.065588)
     )
 
 
@@ -189,16 +183,16 @@ def sigma_cubic_hc2_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        36.815582 + 0.208746 * (x1 - 196.536302) - 0.006990 * (x1 - 0.171406) ** 3
+        -4.902125 + 0.208744 * (x1 + 3.312879) - 0.00699 * (x1 - 0.171413) ** 3
     )
 
 
 # Hydra-MR
-def f_cosine_hydra_mr_1_feat(X: np.ndarray) -> np.ndarray:
+def f_sinusoidal_hydra_mr_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
     return expit(
-        3.455785 - 0.109071 * (x1 + 7.509386) - 1.725167 * np.cos(x1 - 7.584948)
+        0.257881 - 0.109071 * (x1 - 21.809879) - 1.725171 * np.sin(x1 + 0.269034)
     )
 
 
@@ -206,7 +200,7 @@ def sigma_quadratic_hydra_mr_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        -6.992915 - 0.133198 * (x1 - 11.187717) + 0.049947 * (x1 + 1.598588) ** 2
+        -6.13329 - 0.131009 * (x1 - 4.839777) + 0.049945 * (x1 + 1.576739) ** 2
     )
 
 
@@ -215,7 +209,7 @@ def f_cosine_hydra_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
     return expit(
-        2.665519 - 0.051857 * (x1 + 0.003295) - 1.500696 * np.cos(x1 - 7.582998)
+        2.666259 - 0.051857 * (x1 + 0.017538) + 1.500695 * np.cos(x1 + 8.124965)
     )
 
 
@@ -223,7 +217,7 @@ def sigma_cubic_hydra_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        40.537089 + 0.232768 * (x1 - 192.473754) - 0.007811 * (x1 - 0.280013) ** 3
+        -3.755217 + 0.232768 * (x1 - 2.188701) - 0.007811 * (x1 - 0.280014) ** 3
     )
 
 
@@ -232,7 +226,7 @@ def f_cubic_inceptiont_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
     return expit(
-        22.956243 + 0.094365 * (x1 - 223.547806) - 0.004167 * (x1 + 0.109153) ** 3
+        -7.716966 + 0.094367 * (x1 + 101.497791) - 0.004167 * (x1 + 0.109162) ** 3
     )
 
 
@@ -240,26 +234,24 @@ def sigma_quadratic_inceptiont_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        1041.946753
-        + 294.752648 * (x1 - 1041.176656)
-        + 0.009997 * (x1 - 146.381271) ** 2
+        -5.730842 - 0.084045 * (x1 - 15.819096) + 0.022673 * (x1 + 2.931101) ** 2
     )
 
 
 # Mini-R
-def f_cubic_mini_r_1_feat(X: np.ndarray) -> np.ndarray:
+def f_exponential_mini_r_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
     return expit(
-        -1.470548 + 0.200284 * (x1 + 18.613424) - 0.010350 * (x1 + 1.334398) ** 3
+        1.965902 - 0.006666 * (x1 + 0.35949) - 0.002899 * np.exp(x1 + 0.853629)
     )
 
 
-def sigma_cubic_mini_r_1_feat(X: np.ndarray) -> np.ndarray:
+def sigma_exponential_mini_r_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        -3.720808 + 0.002931 * (x1 - 68.575978) - 0.000470 * (x1 + 3.905622) ** 3
+        -4.062777 - 0.006631 * (x1 - 13.600128) - 0.047995 * np.exp(x1 - 4.011454)
     )
 
 
@@ -267,16 +259,14 @@ def sigma_cubic_mini_r_1_feat(X: np.ndarray) -> np.ndarray:
 def f_quadratic_mrsqm_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
-    return expit(
-        0.938416 + 0.117071 * (x1 - 0.318279) + 0.045723 * (x1 - 0.470811) ** 2
-    )
+    return expit(0.96716 - 0.101148 * (x1 + 2.210559) + 0.045723 * (x1 + 1.915524) ** 2)
 
 
 def sigma_cubic_mrsqm_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        -15.432311 - 0.097523 * (x1 - 115.329633) + 0.001355 * (x1 + 1.900370) ** 3
+        -4.010538 - 0.097529 * (x1 + 1.789462) + 0.001355 * (x1 + 1.900384) ** 3
     )
 
 
@@ -285,7 +275,7 @@ def f_cosine_multi_r_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
     return expit(
-        2.750147 - 0.024368 * (x1 + 3.560090) + 1.118282 * np.cos(x1 - 4.405538)
+        2.652187 - 0.024368 * (x1 - 0.459955) + 1.118281 * np.cos(x1 + 8.160833)
     )
 
 
@@ -293,33 +283,31 @@ def sigma_cubic_multi_r_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        33.613107 + 0.292581 * (x1 - 129.120471) - 0.009577 * (x1 - 0.124035) ** 3
+        -7.621192 + 0.292581 * (x1 + 11.812293) - 0.009577 * (x1 - 0.124038) ** 3
     )
 
 
 # PF
-def f_quadratic_pf_1_feat(X: np.ndarray) -> np.ndarray:
+def f_exponential_pf_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
-    return expit(
-        0.887149 - 0.036904 * (x1 + 1.112891) + 0.012220 * (x1 - 2.128276) ** 2
-    )
+    return expit(1.0267 - 0.148475 * (x1 + 0.523744) + 0.003921 * np.exp(x1 - 0.103493))
 
 
 def sigma_cubic_pf_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        8.915015 + 0.106974 * (x1 - 123.196687) - 0.001310 * (x1 - 3.837708) ** 3
+        1.184282 + 0.106983 * (x1 - 50.924763) - 0.00131 * (x1 - 3.839002) ** 3
     )
 
 
 # RDST
-def f_quadratic_rdst_1_feat(X: np.ndarray) -> np.ndarray:
+def f_cubic_rdst_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
     return expit(
-        1.868421 + 0.058588 * (x1 + 2.376990) + 0.009317 * (x1 + 0.268329) ** 2
+        1.374679 + 0.501382 * (x1 - 12.630988) - 6.3e-05 * (x1 - 48.022867) ** 3
     )
 
 
@@ -327,50 +315,50 @@ def sigma_cubic_rdst_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        -82.529011 + 0.403300 * (x1 + 196.002470) - 0.012444 * (x1 + 0.456500) ** 3
+        -1.183852 + 0.403323 * (x1 - 5.695905) - 0.012445 * (x1 + 0.456515) ** 3
     )
 
 
 # RISE
-def f_quadratic_rise_1_feat(X: np.ndarray) -> np.ndarray:
+def f_cubic_rise_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
     return expit(
-        1.004484 - 0.075751 * (x1 + 5.730618) + 0.020321 * (x1 + 0.336067) ** 2
+        -0.18699 + 0.032061 * (x1 + 25.982174) - 0.002982 * (x1 - 1.547126) ** 3
     )
 
 
-def sigma_quadratic_rise_1_feat(X: np.ndarray) -> np.ndarray:
+def sigma_cubic_rise_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        -7.654294 - 0.110745 * (x1 - 30.208511) + 0.010019 * (x1 + 3.785238) ** 2
+        -4.628189 - 0.121223 * (x1 - 2.466433) + 0.00091 * (x1 + 4.827967) ** 3
     )
 
 
 # RIST
-def f_sinusoidal_rist_1_feat(X: np.ndarray) -> np.ndarray:
+def f_exponential_rist_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
     return expit(
-        2.885495 + 0.228740 * (x1 + 1.371575) - 0.888073 * np.sin(x1 - 0.329287)
+        -1.347732 - 1.097222 * (x1 + 3.302676) + 0.00808 * np.exp(x1 + 9.46592)
     )
 
 
-def sigma_cosine_rist_1_feat(X: np.ndarray) -> np.ndarray:
+def sigma_sinusoidal_rist_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        -12.717406 - 0.305172 * (x1 - 22.181533) + 2.218927 * np.cos(x1 + 17.109064)
+        0.887236 - 0.305171 * (x1 + 22.398818) + 2.218922 * np.sin(x1 - 0.169696)
     )
 
 
 # ROCKET
-def f_cubic_rocket_1_feat(X: np.ndarray) -> np.ndarray:
+def f_exponential_rocket_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
     return expit(
-        1.782751 + 0.016232 * (x1 + 8.792844) - 0.005118 * (x1 + 2.697997) ** 3
+        0.911435 - 0.098079 * (x1 - 5.397661) - 0.026838 * np.exp(x1 - 1.634123)
     )
 
 
@@ -378,7 +366,7 @@ def sigma_cubic_rocket_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        -5.445779 + 0.055372 * (x1 + 28.387466) - 0.002027 * (x1 + 0.537528) ** 3
+        -17.441336 + 0.055372 * (x1 + 245.024866) - 0.002027 * (x1 + 0.537528) ** 3
     )
 
 
@@ -387,7 +375,7 @@ def f_cosine_rsf_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
     return expit(
-        -0.108027 + 0.048462 * (x1 + 36.926736) - 0.101842 * np.cos(x1 - 11.885046)
+        0.971774 + 0.048461 * (x1 + 14.645142) - 0.101842 * np.cos(x1 + 0.681274)
     )
 
 
@@ -395,24 +383,24 @@ def sigma_cubic_rsf_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        6.895344 + 0.667401 * (x1 - 14.795979) - 0.020849 * (x1 + 0.399996) ** 3
+        -3.645493 + 0.667401 * (x1 + 0.997882) - 0.020849 * (x1 + 0.399996) ** 3
     )
 
 
 # RSTSF
-def f_quadratic_rstsf_1_feat(X: np.ndarray) -> np.ndarray:
+def f_cubic_rstsf_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
     return expit(
-        1.201644 - 0.115047 * (x1 + 2.544427) + 0.022101 * (x1 + 1.046055) ** 2
+        2.131246 + 0.048524 * (x1 - 26.320879) - 0.001569 * (x1 - 4.101215) ** 3
     )
 
 
-def sigma_cubic_rstsf_1_feat(X: np.ndarray) -> np.ndarray:
+def sigma_quadratic_rstsf_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        -9.080911 - 0.102445 * (x1 - 45.729959) + 0.000585 * (x1 + 7.556147) ** 3
+        -3.704639 - 0.146014 * (x1 + 6.498178) + 0.012009 * (x1 + 6.67758) ** 2
     )
 
 
@@ -421,15 +409,15 @@ def f_sinusoidal_resnet_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
     return expit(
-        2.048669 + 0.047341 * (x1 + 3.860433) + 0.450568 * np.sin(x1 + 3.841300)
+        2.862551 + 0.047341 * (x1 - 13.330246) - 0.450571 * np.sin(x1 + 0.699709)
     )
 
 
-def sigma_quadratic_resnet_1_feat(X: np.ndarray) -> np.ndarray:
+def sigma_cubic_resnet_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        -39.631663 - 1.343598 * (x1 + 26.491297) + 2.005402 * (x1 + 0.295929) ** 2
+        -1.456432 + 8.780995 * (x1 - 2.513521) - 0.241182 * (x1 - 0.753677) ** 3
     )
 
 
@@ -438,7 +426,7 @@ def f_sinusoidal_stc_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
     return expit(
-        2.465523 - 0.018600 * (x1 + 10.827333) - 0.925655 * np.sin(x1 + 0.229552)
+        1.230375 - 0.0186 * (x1 - 55.579543) - 0.925654 * np.sin(x1 + 0.229553)
     )
 
 
@@ -446,16 +434,16 @@ def sigma_cubic_stc_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        1.019365 + 0.175157 * (x1 - 28.672872) - 0.006864 * (x1 - 0.176325) ** 3
+        0.877268 + 0.175156 * (x1 - 27.861698) - 0.006864 * (x1 - 0.17633) ** 3
     )
 
 
 # STSF
-def f_sinusoidal_stsf_1_feat(X: np.ndarray) -> np.ndarray:
+def f_cubic_stsf_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
     return expit(
-        0.566831 - 0.093057 * (x1 - 5.721057) + 0.325630 * np.sin(x1 + 7.515832)
+        0.643128 - 0.006396 * (x1 - 14.728583) - 0.001748 * (x1 - 3.012455) ** 3
     )
 
 
@@ -463,16 +451,16 @@ def sigma_cubic_stsf_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        13.095024 - 0.097476 * (x1 + 178.129976) + 0.000599 * (x1 + 6.790582) ** 3
+        -3.210135 - 0.097623 * (x1 + 10.849915) + 0.000598 * (x1 + 6.80661) ** 3
     )
 
 
 # ShapeDTW
-def f_cosine_shapedtw_1_feat(X: np.ndarray) -> np.ndarray:
+def f_sinusoidal_shapedtw_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
     return expit(
-        4.561438 - 0.114212 * (x1 + 35.962048) - 0.152517 * np.cos(x1 - 9.616464)
+        -1.298306 - 0.114211 * (x1 - 15.343923) - 0.152522 * np.sin(x1 - 1.762558)
     )
 
 
@@ -480,16 +468,16 @@ def sigma_quadratic_shapedtw_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        -5.898342 - 0.100019 * (x1 - 14.190469) + 0.017924 * (x1 + 1.404359) ** 2
+        -0.907174 - 0.21036 * (x1 + 18.523593) + 0.017924 * (x1 + 4.482362) ** 2
     )
 
 
 # Signatures
-def f_quadratic_signatures_1_feat(X: np.ndarray) -> np.ndarray:
+def f_cosine_signatures_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
     return expit(
-        0.338797 - 0.146843 * (x1 - 0.590688) + 0.008810 * (x1 + 0.241508) ** 2
+        -5.703277 - 0.119271 * (x1 - 52.672128) + 0.304926 * np.cos(x1 - 0.684961)
     )
 
 
@@ -497,16 +485,16 @@ def sigma_cubic_signatures_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        44.419883 + 0.703427 * (x1 - 87.777153) - 0.000088 * (x1 - 52.870884) ** 3
+        -10.013202 + 1.738331 * (x1 - 39.293312) - 3.8e-05 * (x1 - 125.033329) ** 3
     )
 
 
 # TDE
-def f_quadratic_tde_1_feat(X: np.ndarray) -> np.ndarray:
+def f_cubic_tde_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
     return expit(
-        0.948131 - 0.121783 * (x1 + 2.234514) + 0.044937 * (x1 + 2.052517) ** 2
+        -160.118537 + 11.584089 * (x1 - 71.625492) - 5.8e-05 * (x1 - 257.98172) ** 3
     )
 
 
@@ -514,7 +502,7 @@ def sigma_cosine_tde_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        -4.123897 - 0.064370 * (x1 - 0.163455) - 0.083439 * np.cos(x1 - 5.347431)
+        -6.849197 - 0.06437 * (x1 - 42.501307) - 0.083439 * np.cos(x1 + 0.935747)
     )
 
 
@@ -523,7 +511,7 @@ def f_cosine_ts_chief_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
     return expit(
-        0.230789 - 0.069500 * (x1 - 34.759744) - 1.557389 * np.cos(x1 - 7.628756)
+        -0.040078 - 0.069501 * (x1 - 38.65634) + 1.557393 * np.cos(x1 + 8.079209)
     )
 
 
@@ -531,33 +519,33 @@ def sigma_cubic_ts_chief_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        -1.085183 + 0.187420 * (x1 - 17.882339) - 0.006344 * (x1 - 0.539172) ** 3
+        21.848163 + 0.18742 * (x1 - 140.245545) - 0.006344 * (x1 - 0.539176) ** 3
     )
 
 
 # TSF
-def f_quadratic_tsf_1_feat(X: np.ndarray) -> np.ndarray:
+def f_sinusoidal_tsf_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
     return expit(
-        0.812016 - 0.071302 * (x1 + 4.249364) + 0.012470 * (x1 - 1.715980) ** 2
+        -3.232277 - 0.110677 * (x1 - 36.210796) + 0.217935 * np.sin(x1 - 5.052419)
     )
 
 
-def sigma_quadratic_tsf_1_feat(X: np.ndarray) -> np.ndarray:
+def sigma_cubic_tsf_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        -4.218871 - 0.005855 * (x1 + 10.410147) + 0.015457 * (x1 - 0.906873) ** 2
+        -9.002519 + 1.10917 * (x1 - 21.477508) - 6.8e-05 * (x1 - 75.073467) ** 3
     )
 
 
 # TSFresh
-def f_cosine_tsfresh_1_feat(X: np.ndarray) -> np.ndarray:
+def f_cubic_tsfresh_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
     return expit(
-        2.381371 + 0.155577 * (x1 - 0.489518) + 0.364799 * np.cos(x1 - 2.458412)
+        -0.806271 - 0.119361 * (x1 - 23.261874) + 0.0088 * (x1 + 0.384648) ** 3
     )
 
 
@@ -565,24 +553,24 @@ def sigma_cubic_tsfresh_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        81.194834 + 1.920251 * (x1 - 39.043689) - 6.762968 * (x1 + 5.221846) ** 3
+        -2.156059 + 2.358569 * (x1 - 0.794105) - 0.131037 * (x1 + 1.041635) ** 3
     )
 
 
 # WEASEL-D
-def f_quadratic_weasel_d_1_feat(X: np.ndarray) -> np.ndarray:
+def f_cubic_weasel_d_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
     return expit(
-        -0.319604 - 0.210755 * (x1 - 4.278125) + 0.043832 * (x1 + 3.126242) ** 2
+        -27.111943 + 6.361531 * (x1 - 43.464658) - 0.0001 * (x1 - 145.134837) ** 3
     )
 
 
-def sigma_sinusoidal_weasel_d_1_feat(X: np.ndarray) -> np.ndarray:
+def sigma_quadratic_weasel_d_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        -3.317144 - 0.036756 * (x1 + 21.777535) - 0.005568 * np.sin(x1 - 3.084819)
+        -3.665889 - 0.042993 * (x1 + 12.97554) + 0.005916 * (x1 + 2.061859) ** 2
     )
 
 
@@ -591,7 +579,7 @@ def f_quadratic_weasel_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
     return expit(
-        0.960802 - 0.053526 * (x1 + 1.129108) + 0.012543 * (x1 - 2.305353) ** 2
+        0.680878 - 0.073143 * (x1 - 3.513466) + 0.012544 * (x1 - 1.523125) ** 2
     )
 
 
@@ -599,16 +587,16 @@ def sigma_cubic_weasel_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        5.683443 + 0.113077 * (x1 - 84.485574) - 0.000879 * (x1 - 3.811410) ** 3
+        -2.440648 + 0.113076 * (x1 - 12.639588) - 0.000879 * (x1 - 3.811396) ** 3
     )
 
 
 # cBOSS
-def f_quadratic_cboss_1_feat(X: np.ndarray) -> np.ndarray:
+def f_cubic_cboss_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
     x1 = X[:, 0]
     return expit(
-        -0.413710 + 0.316925 * (x1 + 2.350191) + 0.044110 * (x1 - 2.836558) ** 2
+        -150.075644 + 9.913785 * (x1 - 59.205162) - 6.5e-05 * (x1 - 224.771216) ** 3
     )
 
 
@@ -616,27 +604,11 @@ def sigma_quadratic_cboss_1_feat(X: np.ndarray) -> np.ndarray:
     """Compute the heteroscedastic noise σ(x) for 1D input."""
     x1 = X[:, 0]
     return softplus(
-        -2.047815 - 0.081492 * (x1 + 27.198818) + 0.008365 * (x1 + 1.933185) ** 2
+        -2.514629 - 0.125268 * (x1 + 15.10036) + 0.008365 * (x1 + 4.549561) ** 2
     )
 
 
 ### 2 FEATURES ###
-def f_quadratic_rocket_2_feat(X: np.ndarray) -> np.ndarray:
-    x1 = X[:, 0]
-    x2 = X[:, 1]
-    return expit(
-        1.330836 - 0.04011 * (x1 + 10.326781) + 0.234344 * (x2 - 0.244166) ** 2
-    )
-
-
-def sigma_cosine_rocket_2_feat(X: np.ndarray) -> np.ndarray:
-    x1 = X[:, 0]
-    x2 = X[:, 1]
-    return softplus(
-        -6.172266 - 0.066204 * (x1 - 31.134696) + 0.399073 * np.cos(x2 + 3.088828)
-    )
-
-
 # HC2 - 2 Feat
 def f_quadratic_hc2_2_feat(X: np.ndarray) -> np.ndarray:
     """Compute the true mean function f(x) for 1D input."""
@@ -652,87 +624,89 @@ def sigma_quadratic_hc2_2_feat(X: np.ndarray) -> np.ndarray:
     x1 = X[:, 0]
     x2 = X[:, 1]
     return softplus(
-        -5.330938 - 0.105839 * (x1 - 1.965741) + 0.002646 * (x2 - 9.524848) ** 2
+        -4.999376 - 0.106637 * (x1 + 1.131506) + 0.002686 * (x2 - 9.444566) ** 2
     )
 
 
-FUNCTIONS: Dict[str, Callable[[np.ndarray], np.ndarray]] = {
-    "f_cosine__1nn_dtw_1_feat": f_cosine__1nn_dtw_1_feat,
-    "f_cubic_arsenal_1_feat": f_cubic_arsenal_1_feat,
-    "f_quadratic_boss_1_feat": f_quadratic_boss_1_feat,
-    "f_quadratic_cif_1_feat": f_quadratic_cif_1_feat,
-    "f_quadratic_cnn_1_feat": f_quadratic_cnn_1_feat,
-    "f_quadratic_catch22_1_feat": f_quadratic_catch22_1_feat,
-    "f_quadratic_drcif_1_feat": f_quadratic_drcif_1_feat,
-    "f_cosine_ee_1_feat": f_cosine_ee_1_feat,
-    "f_quadratic_freshprince_1_feat": f_quadratic_freshprince_1_feat,
-    "f_cosine_hc1_1_feat": f_cosine_hc1_1_feat,
-    "f_sinusoidal_hc2_1_feat": f_sinusoidal_hc2_1_feat,
-    "f_cosine_hydra_mr_1_feat": f_cosine_hydra_mr_1_feat,
+FUNCTIONS: dict[str, Callable[[np.ndarray], np.ndarray]] = {
+    "f_exponential__1nn_dtw_1_feat": f_exponential__1nn_dtw_1_feat,
+    "f_exponential_arsenal_1_feat": f_exponential_arsenal_1_feat,
+    "f_cubic_boss_1_feat": f_cubic_boss_1_feat,
+    "f_cosine_cif_1_feat": f_cosine_cif_1_feat,
+    "f_cosine_cnn_1_feat": f_cosine_cnn_1_feat,
+    "f_cubic_catch22_1_feat": f_cubic_catch22_1_feat,
+    "f_cubic_drcif_1_feat": f_cubic_drcif_1_feat,
+    "f_sinusoidal_ee_1_feat": f_sinusoidal_ee_1_feat,
+    "f_cubic_freshprince_1_feat": f_cubic_freshprince_1_feat,
+    "f_sinusoidal_hc1_1_feat": f_sinusoidal_hc1_1_feat,
+    "f_cosine_hc2_1_feat": f_cosine_hc2_1_feat,
+    "f_sinusoidal_hydra_mr_1_feat": f_sinusoidal_hydra_mr_1_feat,
     "f_cosine_hydra_1_feat": f_cosine_hydra_1_feat,
     "f_cubic_inceptiont_1_feat": f_cubic_inceptiont_1_feat,
-    "f_cubic_mini_r_1_feat": f_cubic_mini_r_1_feat,
+    "f_exponential_mini_r_1_feat": f_exponential_mini_r_1_feat,
     "f_quadratic_mrsqm_1_feat": f_quadratic_mrsqm_1_feat,
     "f_cosine_multi_r_1_feat": f_cosine_multi_r_1_feat,
-    "f_quadratic_pf_1_feat": f_quadratic_pf_1_feat,
-    "f_quadratic_rdst_1_feat": f_quadratic_rdst_1_feat,
-    "f_quadratic_rise_1_feat": f_quadratic_rise_1_feat,
-    "f_sinusoidal_rist_1_feat": f_sinusoidal_rist_1_feat,
-    "f_cubic_rocket_1_feat": f_cubic_rocket_1_feat,
+    "f_exponential_pf_1_feat": f_exponential_pf_1_feat,
+    "f_cubic_rdst_1_feat": f_cubic_rdst_1_feat,
+    "f_cubic_rise_1_feat": f_cubic_rise_1_feat,
+    "f_exponential_rist_1_feat": f_exponential_rist_1_feat,
+    "f_exponential_rocket_1_feat": f_exponential_rocket_1_feat,
     "f_cosine_rsf_1_feat": f_cosine_rsf_1_feat,
-    "f_quadratic_rstsf_1_feat": f_quadratic_rstsf_1_feat,
+    "f_cubic_rstsf_1_feat": f_cubic_rstsf_1_feat,
     "f_sinusoidal_resnet_1_feat": f_sinusoidal_resnet_1_feat,
     "f_sinusoidal_stc_1_feat": f_sinusoidal_stc_1_feat,
-    "f_sinusoidal_stsf_1_feat": f_sinusoidal_stsf_1_feat,
-    "f_cosine_shapedtw_1_feat": f_cosine_shapedtw_1_feat,
-    "f_quadratic_signatures_1_feat": f_quadratic_signatures_1_feat,
-    "f_quadratic_tde_1_feat": f_quadratic_tde_1_feat,
+    "f_cubic_stsf_1_feat": f_cubic_stsf_1_feat,
+    "f_sinusoidal_shapedtw_1_feat": f_sinusoidal_shapedtw_1_feat,
+    "f_cosine_signatures_1_feat": f_cosine_signatures_1_feat,
+    "f_cubic_tde_1_feat": f_cubic_tde_1_feat,
     "f_cosine_ts_chief_1_feat": f_cosine_ts_chief_1_feat,
-    "f_quadratic_tsf_1_feat": f_quadratic_tsf_1_feat,
-    "f_cosine_tsfresh_1_feat": f_cosine_tsfresh_1_feat,
-    "f_quadratic_weasel_d_1_feat": f_quadratic_weasel_d_1_feat,
+    "f_sinusoidal_tsf_1_feat": f_sinusoidal_tsf_1_feat,
+    "f_cubic_tsfresh_1_feat": f_cubic_tsfresh_1_feat,
+    "f_cubic_weasel_d_1_feat": f_cubic_weasel_d_1_feat,
     "f_quadratic_weasel_1_feat": f_quadratic_weasel_1_feat,
-    "f_quadratic_cboss_1_feat": f_quadratic_cboss_1_feat,
+    "f_cubic_cboss_1_feat": f_cubic_cboss_1_feat,
+    # 2 Features
     "f_quadratic_hc2_2_feat": f_quadratic_hc2_2_feat,
 }
 
-SIGMAS: Dict[str, Callable[[np.ndarray], np.ndarray]] = {
-    "sigma_sinusoidal__1nn_dtw_1_feat": sigma_sinusoidal__1nn_dtw_1_feat,
+SIGMAS: dict[str, Callable[[np.ndarray], np.ndarray]] = {
+    "sigma_cubic__1nn_dtw_1_feat": sigma_cubic__1nn_dtw_1_feat,
     "sigma_cubic_arsenal_1_feat": sigma_cubic_arsenal_1_feat,
     "sigma_quadratic_boss_1_feat": sigma_quadratic_boss_1_feat,
-    "sigma_quadratic_cif_1_feat": sigma_quadratic_cif_1_feat,
+    "sigma_cubic_cif_1_feat": sigma_cubic_cif_1_feat,
     "sigma_cubic_cnn_1_feat": sigma_cubic_cnn_1_feat,
     "sigma_cubic_catch22_1_feat": sigma_cubic_catch22_1_feat,
-    "sigma_cosine_drcif_1_feat": sigma_cosine_drcif_1_feat,
-    "sigma_quadratic_ee_1_feat": sigma_quadratic_ee_1_feat,
+    "sigma_quadratic_drcif_1_feat": sigma_quadratic_drcif_1_feat,
+    "sigma_cubic_ee_1_feat": sigma_cubic_ee_1_feat,
     "sigma_quadratic_freshprince_1_feat": sigma_quadratic_freshprince_1_feat,
     "sigma_cubic_hc1_1_feat": sigma_cubic_hc1_1_feat,
     "sigma_cubic_hc2_1_feat": sigma_cubic_hc2_1_feat,
     "sigma_quadratic_hydra_mr_1_feat": sigma_quadratic_hydra_mr_1_feat,
     "sigma_cubic_hydra_1_feat": sigma_cubic_hydra_1_feat,
     "sigma_quadratic_inceptiont_1_feat": sigma_quadratic_inceptiont_1_feat,
-    "sigma_cubic_mini_r_1_feat": sigma_cubic_mini_r_1_feat,
+    "sigma_exponential_mini_r_1_feat": sigma_exponential_mini_r_1_feat,
     "sigma_cubic_mrsqm_1_feat": sigma_cubic_mrsqm_1_feat,
     "sigma_cubic_multi_r_1_feat": sigma_cubic_multi_r_1_feat,
     "sigma_cubic_pf_1_feat": sigma_cubic_pf_1_feat,
     "sigma_cubic_rdst_1_feat": sigma_cubic_rdst_1_feat,
-    "sigma_quadratic_rise_1_feat": sigma_quadratic_rise_1_feat,
-    "sigma_cosine_rist_1_feat": sigma_cosine_rist_1_feat,
+    "sigma_cubic_rise_1_feat": sigma_cubic_rise_1_feat,
+    "sigma_sinusoidal_rist_1_feat": sigma_sinusoidal_rist_1_feat,
     "sigma_cubic_rocket_1_feat": sigma_cubic_rocket_1_feat,
     "sigma_cubic_rsf_1_feat": sigma_cubic_rsf_1_feat,
-    "sigma_cubic_rstsf_1_feat": sigma_cubic_rstsf_1_feat,
-    "sigma_quadratic_resnet_1_feat": sigma_quadratic_resnet_1_feat,
+    "sigma_quadratic_rstsf_1_feat": sigma_quadratic_rstsf_1_feat,
+    "sigma_cubic_resnet_1_feat": sigma_cubic_resnet_1_feat,
     "sigma_cubic_stc_1_feat": sigma_cubic_stc_1_feat,
     "sigma_cubic_stsf_1_feat": sigma_cubic_stsf_1_feat,
     "sigma_quadratic_shapedtw_1_feat": sigma_quadratic_shapedtw_1_feat,
     "sigma_cubic_signatures_1_feat": sigma_cubic_signatures_1_feat,
     "sigma_cosine_tde_1_feat": sigma_cosine_tde_1_feat,
     "sigma_cubic_ts_chief_1_feat": sigma_cubic_ts_chief_1_feat,
-    "sigma_quadratic_tsf_1_feat": sigma_quadratic_tsf_1_feat,
+    "sigma_cubic_tsf_1_feat": sigma_cubic_tsf_1_feat,
     "sigma_cubic_tsfresh_1_feat": sigma_cubic_tsfresh_1_feat,
-    "sigma_sinusoidal_weasel_d_1_feat": sigma_sinusoidal_weasel_d_1_feat,
+    "sigma_quadratic_weasel_d_1_feat": sigma_quadratic_weasel_d_1_feat,
     "sigma_cubic_weasel_1_feat": sigma_cubic_weasel_1_feat,
     "sigma_quadratic_cboss_1_feat": sigma_quadratic_cboss_1_feat,
+    # 2 Features
     "sigma_quadratic_hc2_2_feat": sigma_quadratic_hc2_2_feat,
 }
 
@@ -788,7 +762,9 @@ class DataSampler:
         self.job = job
         self.functions = functions
         self.sigmas = sigmas
-        self.rng = np.random.default_rng(seed=int(job["seed"]))
+        self.rng_train = np.random.default_rng(seed=int(job["seed"]))
+        # independent RNG for test data
+        self.rng_test = np.random.default_rng(seed=int(job["seed"]) + 1)
 
     def sample_train_data(self) -> dict[str, np.ndarray]:
         """Sample training data with heteroscedastic noise using Latin Hypercube Sampling.
@@ -813,7 +789,7 @@ class DataSampler:
 
         if is_single_interval:
             a, b = map(float, interval_spec)
-            sampler = qmc.LatinHypercube(d=n_features, seed=self.rng)
+            sampler = qmc.LatinHypercube(d=n_features, seed=self.rng_train)
             X_unique = qmc.scale(
                 sampler.random(n_instances),
                 [a] * n_features,
@@ -826,8 +802,8 @@ class DataSampler:
             n2 = n_instances - n1
 
             if n_features == 1:
-                s1 = qmc.LatinHypercube(d=1, seed=self.rng)
-                s2 = qmc.LatinHypercube(d=1, seed=self.rng)
+                s1 = qmc.LatinHypercube(d=1, seed=self.rng_train)
+                s2 = qmc.LatinHypercube(d=1, seed=self.rng_train)
                 axis = np.concatenate(
                     [
                         qmc.scale(s1.random(n1), [a], [b]).ravel(),
@@ -839,12 +815,12 @@ class DataSampler:
                 # Per feature: draw LHS samples from both intervals and independently permute.
                 axes: list[np.ndarray] = []
                 for _ in range(n_features):
-                    s1 = qmc.LatinHypercube(d=1, seed=self.rng)
-                    s2 = qmc.LatinHypercube(d=1, seed=self.rng)
+                    s1 = qmc.LatinHypercube(d=1, seed=self.rng_train)
+                    s2 = qmc.LatinHypercube(d=1, seed=self.rng_train)
                     part1 = qmc.scale(s1.random(n1), [a], [b]).ravel()
                     part2 = qmc.scale(s2.random(n2), [c], [d]).ravel()
                     base_axis = np.concatenate([part1, part2])
-                    axes.append(base_axis[self.rng.permutation(n_instances)])
+                    axes.append(base_axis[self.rng_train.permutation(n_instances)])
                 X_unique = np.stack(axes, axis=1)
 
         # Repeats (repeat rows of X_unique)
@@ -858,7 +834,7 @@ class DataSampler:
         # Targets + heteroscedastic noise
         y_clean = fn(X)  # (N,) or (N,1)
         sigma = sigma_fn(X)  # (N,) or (N,1)
-        noise = self.rng.normal(0.0, sigma)
+        noise = self.rng_train.normal(0.0, sigma)
         y = y_clean + noise
 
         return {
@@ -902,27 +878,25 @@ class DataSampler:
             X_list.append(X_extra)
 
         X = np.unique(np.vstack(X_list), axis=0)
-        y = fn(X)  # clean
-        sigma = sigma_fn(X)  # noise std
+        y_clean = fn(X)  # (N,) or (N,1)
+        sigma = sigma_fn(X)  # (N,) or (N,1)
+        noise = self.rng_test.normal(0.0, sigma)
+        y = y_clean + noise
 
-        return {"X": X, "y": y, "sigma": sigma}
+        return {"X": X, "y": y, "sigma": sigma, "y_clean": y_clean}
 
     def _probe_dim(self, f: Callable[[np.ndarray], np.ndarray]) -> int:
-        """Infer input dimensionality D of `f` by probing shapes (N, D) for D=1..1000.
+        """Infer input dimensionality D of `f` by probing shapes (N, D) for D=1..9999.
 
         Args:
             f: Callable mapping (N, D) arrays to targets.
 
         Returns:
             Detected input dimension D.
-
-        Raises:
-            ValueError: If no dimensionality in [1, 1000] is accepted.
         """
-        for d in range(1, 1001):
+        for d in range(1, 9999):
             try:
                 _ = f(np.zeros((1, d)))
                 return d
             except Exception:
                 continue
-        raise ValueError("Could not infer input dimensionality D in range [1, 1000].")
