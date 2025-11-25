@@ -67,13 +67,13 @@ def _bin_uncertainty(predictive_variances: np.ndarray, n_bins: int):
 def ence(
     y_true: np.ndarray,
     y_pred_mean: np.ndarray,
-    predictive_variances: np.ndarray,
+    total_predictive_variances: np.ndarray,
     n_bins: int = 10,
 ) -> float:
     """Expected Normalized Calibration Error (ENCE) as proposed by Levi et al. (2022)."""
     y_true = np.asarray(y_true, dtype=float)
     y_pred_mean = np.asarray(y_pred_mean, dtype=float)
-    variances = np.asarray(predictive_variances, dtype=float)
+    variances = np.asarray(total_predictive_variances, dtype=float)
 
     bin_idx, edges, _ = _bin_uncertainty(variances, n_bins=n_bins)
 
@@ -428,11 +428,11 @@ def _collect_metrics_for_experiment(results_dir: Path) -> dict[str, float]:
         metrics[f"nll_ood_run{i + 1}"] = float(nll_ood[i])
         metrics[f"nll_id_run{i + 1}"] = float(nll_id[i])
 
-    # ENCE on test interval
-    y_true_te = y_clean[mask_test_interval]
+    # ENCE on train interval
+    y_true_te = y_clean[mask_train_interval]
     for i in range(n_runs):
-        y_mean_te = y_pred_all[i, mask_test_interval]
-        var_te = alea_pred_all[i, mask_test_interval] + epi_all[i, mask_test_interval]
+        y_mean_te = y_pred_all[i, mask_train_interval]
+        var_te = alea_pred_all[i, mask_train_interval] + epi_all[i, mask_train_interval]
         metrics[f"ence_run{i + 1}"] = ence(y_true_te, y_mean_te, var_te, n_bins=10)
 
     # MAE on train interval
