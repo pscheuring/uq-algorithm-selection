@@ -64,8 +64,8 @@ The project investigates how epistemic and aleatoric uncertainty can be modeled,
 │   ├── 05_exp5_multi_target.ipynb        # Exp 5 — results & figures
 │   ├── 06_exp_eval_metrics.ipynb         # LaTeX-table eval metric tables
 │   ├── 07_derivation_dgp.ipynb           # Derivation of the DGP
-│   ├── 08_concept_figures.ipynb          # Thesis concept figures
-│   └── 09_hyperparameter_tuning.ipynb    # UQ model hyperparameter tuning
+│   └── 08_hyperparameter_tuning.ipynb    # UQ model hyperparameter tuning
+│   ├── 09_concept_figures.ipynb          # Thesis concept figures
 
 ├── results/                              # Final stored results
 
