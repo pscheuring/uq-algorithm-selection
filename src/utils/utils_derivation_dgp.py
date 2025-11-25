@@ -447,7 +447,7 @@ def plot_best_fit(
     ax.set_xlim(-6, 6)
     ax.grid(True, which="both", alpha=0.4)
     ax.legend()
-    ax.set_xlabel(f"{best_feat}")
+    ax.set_xlabel(rf"{best_feat}")
     ax.set_ylabel("Target")
     ax.set_title(title or f"{best_name} fit — MAE = {mae:.4f}")
     return ax
@@ -694,8 +694,8 @@ def plot_best_fit_grid_all(
         x_m = np.asarray(cfg_m["x"])
         y_m = np.asarray(cfg_m["y"])
         funcs_m: Dict[str, Callable] = cfg_m["candidate_funcs"]
-        best_feat_m = _sanitize(str(cfg_m["best_feat"]))
-        col_title = _sanitize(str(cfg_m.get("title", f"Model {idx + 1}")))
+        best_feat_m = str(cfg_m["best_feat"])
+        col_title = str(cfg_m.get("title", f"Model {idx + 1}"))
 
         if df_m.shape[0] == 0:
             raise ValueError(f"df_func_results (mean) at column {idx} is empty.")
@@ -719,7 +719,7 @@ def plot_best_fit_grid_all(
         )
         ax_top.set_xlim(x_fit_range)
         ax_top.grid(True, which="both", alpha=0.4)
-        ax_top.set_xlabel(f"{best_feat_m}")
+        ax_top.set_xlabel(rf"{best_feat_m}")
         if c == 0:
             ax_top.set_ylabel(_sanitize(y_label_mean))
         ax_top.set_title(f"{col_title} — MAE = {mae:.4f}")
@@ -734,7 +734,7 @@ def plot_best_fit_grid_all(
         x_s = np.asarray(cfg_s["x"])
         y_s = np.asarray(cfg_s["y"])
         funcs_s: Dict[str, Callable] = cfg_s["candidate_funcs"]
-        best_feat_s = _sanitize(str(cfg_s["best_feat"]))
+        best_feat_s = str(cfg_s["best_feat"])
 
         if df_s.shape[0] == 0:
             raise ValueError(f"df_func_results (std) at column {idx} is empty.")
@@ -766,7 +766,7 @@ def plot_best_fit_grid_all(
         )
         ax_bot.set_xlim(x_fit_range)
         ax_bot.grid(True, which="both", alpha=0.4)
-        ax_bot.set_xlabel(f"{best_feat_s} (scaled to [-6, 6])")
+        ax_bot.set_xlabel(rf"{best_feat_s}")
         ax_bot.set_ylim(0, 0.03)
         if c == 0:
             ax_bot.set_ylabel(_sanitize(y_label_std))
