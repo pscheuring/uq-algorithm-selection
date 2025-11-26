@@ -96,35 +96,44 @@ The project investigates how epistemic and aleatoric uncertainty can be modeled,
 
 ## Reproduce Experiment Results
 
-To reproduce any experiment, follow these steps:
+**Requirements:**  
+- Python >=3.11
+- [uv](https://docs.astral.sh/uv/) for dependency management
 
-1. **Select the corresponding experiment config file**  
+To reproduce any experiment, follow these steps:
+1. **Install dependencies:**  
+   ```bash
+   uv sync
+   ```
+2. **Select the corresponding experiment config file**  
    In `main.py`, set the desired experiment by passing the appropriate config path, e.g.:
 
    ```python
    if __name__ == "__main__":
        main(experiment_path=EXP1_CONFIG_PATH)
     ```
-Available config files:
-   - `EXP1_CONFIG_PATH`
-   - `EXP2_CONFIG_PATH`
-   - `EXP3_CONFIG_PATH`
-   - `EXP4_CONFIG_PATH`
-   - `EXP5_DISTINCT_CONFIG_PATH`
-   - `EXP5_SIMILAR_CONFIG_PATH`
+   Available config files:
+      - `EXP1_CONFIG_PATH`
+      - `EXP2_CONFIG_PATH`
+      - `EXP3_CONFIG_PATH`
+      - `EXP4_CONFIG_PATH`
+      - `EXP5_DISTINCT_CONFIG_PATH`
+      - `EXP5_SIMILAR_CONFIG_PATH`
 
-2. **Run the benchmark pipeline:**
+3. **Run the benchmark pipeline:**
+
+   Run the pipeline from the project root:
    ```bash
    uv run main.py
    ```
   
-3. **Results are saved automatically**  
+4. **Results are saved automatically**  
    All outputs — including target predictions, epistemic / aleatoric uncertainty, losses, NLL values, and train/infer times — are stored in: `results/<experiment_name>/<model_name>/<full_job_name>/<timestamp>`
    Additionally, a new entry is appended to: 
    `results/benchmark_summary.csv`
 
 
-4. **Generate metrics and figures for the thesis**  
+5. **Generate metrics and figures for the thesis**  
 Open the corresponding notebook for each experiment (e.g., `01_exp1_n_unique.ipynb`) and load the results by adjusting the paths inside  
 `load_meta_model_benchmarking_results()`.
 
