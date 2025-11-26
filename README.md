@@ -1,6 +1,6 @@
 # Deep Learning-based Uncertainty Quantification for Time Series Algorithm Selection
 
-This repository contains the full code accompanying the master’s thesis *“Toward Human-Centered Automated Machine Learning: An Empirical Study on Deep Learning-based Uncertainty Quantification for Time Series Algorithm Selection”*. 
+This repository contains the full code accompanying the master thesis *“Toward Human-Centered Automated Machine Learning: An Empirical Study on Deep Learning-based Uncertainty Quantification for Time Series Algorithm Selection”*. 
 
 The project investigates how epistemic and aleatoric uncertainty can be modeled, quantified, and evaluated within meta-learning systems that recommend time series algorithms. With this repository, all results and figures of the conducted experiments presented in the thesis can be fully reproduced.
 
