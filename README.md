@@ -1,8 +1,13 @@
-# Deep Learning-based Uncertainty Quantification for Time Series Algorithm Selection
+<div align="center">
+
+# *Master Thesis*
+# Toward Human-Centered Automated Machine Learning: An Empirical Study on Deep Learning-based Uncertainty Quantification for Time Series Algorithm Selection
+</div>
 
 This repository contains the full code accompanying the master thesis *“Toward Human-Centered Automated Machine Learning: An Empirical Study on Deep Learning-based Uncertainty Quantification for Time Series Algorithm Selection”*. 
 
-The project investigates how epistemic and aleatoric uncertainty can be modeled, quantified, and evaluated within meta-learning systems that recommend time series algorithms. With this repository, all results and figures of the conducted experiments presented in the thesis can be fully reproduced.
+## Abstract
+Selecting suitable time series algorithms is a crucial step in real-world applications that rely on the accurate analysis of complex temporal data. Because different algorithms excel at different tasks, the large variety of available methods requires extensive evaluation to identify the most suitable time series algorithm for a new task. Existing approaches to time series algorithm selection address this challenge by using a meta-model trained on the characteristics of previous tasks to predict the best algorithm for a new task. However, they rarely account for different forms of uncertainty. Such predictions inherently involve epistemic uncertainty arising from limited knowledge of the meta-model and aleatoric uncertainty due to noise in the data. As a result, users do not know when to trust an algorithm recommendation and when to treat it with caution. This study addresses this issue by investigating how epistemic and aleatoric uncertainty can be integrated into time series algorithm selection systems. By identifying key characteristics of such systems, the work introduces an experimental framework that enables their systematic investigation in controlled experiments and reveals how these properties shape epistemic and aleatoric uncertainty. The results show that existing uncertainty quantification methods can handle the multidimensional nature of the data used to train meta-models, but sufficient data coverage is essential for obtaining reliable estimates of aleatoric uncertainty. Moreover, the quality of epistemic uncertainty estimates depends on the chosen method, and the evaluation metrics should be selected according to the intended purpose of the uncertainty assessment. These findings provide a basis for extending existing time series algorithm selection systems so that they not only achieve high predictive accuracy but also communicate uncertainty reliably, thereby moving toward human-centered automated machine learning systems.
 
 
 ## Overview of the Five Experiments
