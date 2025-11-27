@@ -7,20 +7,20 @@ The project investigates how epistemic and aleatoric uncertainty can be modeled,
 
 ## Overview of the Five Experiments
 
-1. **Experiment 1 — Unique Samples (*N*<sub>unique</sub>):**  
-   Investigates how increasing the number of unique training instances affects epistemic and aleatoric uncertainty.
+**Experiment 1 — Unique Samples (*N*<sub>unique</sub>):**  
+This experiment investigates how the number of available unique training instances influences predictive performance and the resulting uncertainty components. Here, a unique training instance refers to a distinct meta-feature configuration, each associated with a single target value. This setup corresponds to a benchmarking scenario in which each time series algorithm is evaluated only once per dataset, yielding a single observed performance value for each meta-feature configuration.
 
-2. **Experiment 2 — Repeated Samples (*N*<sub>rep</sub>):**  
-   Examines how repeated evaluations of the same instance influence specifically aleatoric uncertainty. More repetitions help models learn the inherent noise structure more reliably.
+**Experiment 2 — Repeated Observations (*N*<sub>rep</sub>):**  
+In real meta-learning datasets for time series AS, multiple identical meta-feature inputs may be associated with varying target values, which we denote as repeated observations. This experiment examines how different numbers of repeated observations affect uncertainty estimates, with a particular focus on aleatoric uncertainty.
 
-3. **Experiment 3 — In-Between OOD:**  
-   Tests model behavior when predictions are required in regions between two well-covered training areas. This evaluates whether models meaningfully express increased epistemic uncertainty under distribution shift.
+**Experiment 3 — In-Between OOD:**  
+In-between OOD refers to inputs that fall within the nominal input range but in regions that were never observed during training, typically due to gaps between disjoint intervals of available data. Thus, it represents an OOD condition that arises inside the nominal domain rather than beyond its boundaries. This experiment investigates how models behave when exposed to in-between OOD conditions with a focus on epistemic uncertainty.
 
-4. **Experiment 4 — Two-Dimensional Feature Space:**  
-   Extends the experiments to a two-dimensional input space to evaluate how well uncertainty estimates generalize to more complex patterns.
+**Experiment 4 — Two-Dimensional Feature Space:**  
+This experiment extends the setup of Experiment 1 to a two-dimensional input space to examine whether the uncertainty patterns observed in the one-dimensional case persist when additional features are incorporated. It evaluates how well uncertainty estimates generalize to higher-dimensional settings by varying the number of unique training instances.
 
-5. **Experiment 5 — Multi-Target Prediction:**  
-   Analyzes uncertainty when predicting multiple targets (e.g. algorithm performances) simultaneously, reflecting realistic meta-learning setups with correlated targets.
+**Experiment 5 — Multi-Target Prediction:**  
+This experiment investigates how moving from single-target to multi-target prediction affects predictive behavior and uncertainty estimates, reflecting realistic settings in which multiple algorithm performances must be predicted simultaneously. By comparing single-target and two types of multi-target configurations, the experiment analyzes how inter-target relationships shape uncertainty.
 
 
 ## Repository Structure
